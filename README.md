@@ -217,19 +217,9 @@ Environment variables and API key configuration.
 }
 ```
 
-## 🤝 Contributing
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for architectural details.
-
 ## 📄 License
 
 See LICENSE file for details.
-
-## 🔗 Documentation
-
-- [Tool Specifications v3](docs/crypto-macro-mcp-tools-v3.md)
-- [Data Sources Plan v3](docs/crypto-data-sources-plan-v3.md)
-- [Architecture Design](docs/ARCHITECTURE.md)
 
 ## 🐳 Docker Services
 

@@ -1,164 +1,189 @@
 # MCP Server - Crypto + Macro Tools v3
 
-加密金融与宏观经济MCP工具服务器，提供7个域中心工具 + 一组链上专用工具的统一数据接入层。
+A unified MCP server for crypto finance and macroeconomic data, providing 7 core tools plus a comprehensive onchain analytics suite.
 
-## 📋 功能概览
+## 📋 Features
 
-### ✅ 已实现
-- `crypto_overview` - 代币一站式概览（基础资料、市场指标、供应、持有者、社交、板块、开发活跃度）
-- `market_microstructure` - 行情与微结构
-- `derivatives_hub` - 衍生品统一入口
-- `web_research_search` - Web/研报检索（包含新闻搜索，支持并行多数据源）
-- `macro_hub` - 宏观/Fed/指数/仪表盘
-- `draw_chart` - 图表可视化（基于客户端提供的 Plotly 配置）
-- 链上工具家族 `onchain_*`（拆分自原 `onchain_hub`）：
-  - `onchain_tvl_fees` - 协议 TVL 与费用/收入（DefiLlama）
-  - `onchain_stablecoins_cex` - 稳定币指标 + CEX 储备（DefiLlama）
-  - `onchain_bridge_volumes` - 跨链桥 24h/7d/30d 交易量（DefiLlama）
-  - `onchain_dex_liquidity` - Uniswap v3 流动性与池子/Tick 分布（The Graph）
-  - `onchain_governance` - Snapshot + Tally 治理提案
-  - `onchain_whale_transfers` - Whale Alert 大额转账监控
-  - `onchain_token_unlocks` - Token Unlocks 解锁计划
-  - `onchain_activity` - Etherscan 链上活跃度指标
-  - `onchain_contract_risk` - GoPlus / Slither 合约风险分析
+### ✅ Implemented Tools
 
-> 原 `onchain_hub`（链上+治理+协议）已正式废弃，由上述更细粒度的 `onchain_*` 工具替代。
+**Core Tools:**
+- `crypto_overview` - Comprehensive token overview (fundamentals, market metrics, supply, holders, social, sectors, dev activity)
+- `market_microstructure` - Market data & microstructure analysis
+- `derivatives_hub` - Unified derivatives data access
+- `web_research_search` - Web & research search (news, reports, parallel multi-source queries)
+- `macro_hub` - Macro indicators, Fed data, indices & dashboards
+- `draw_chart` - Chart visualization (Plotly-based)
 
-## 🏗️ 架构特性
+**Onchain Analytics Suite:**
+- `onchain_tvl_fees` - Protocol TVL & fees/revenue (DefiLlama)
+- `onchain_stablecoins_cex` - Stablecoin metrics + CEX reserves (DefiLlama)
+- `onchain_bridge_volumes` - Cross-chain bridge volumes (24h/7d/30d, DefiLlama)
+- `onchain_dex_liquidity` - Uniswap v3 liquidity & pool/tick distribution (The Graph)
+- `onchain_governance` - Governance proposals (Snapshot + Tally)
+- `onchain_whale_transfers` - Large transfer monitoring (Whale Alert)
+- `onchain_token_unlocks` - Token unlock schedules
+- `onchain_activity` - Onchain activity metrics (Etherscan)
+- `onchain_contract_risk` - Contract risk analysis (GoPlus / Slither)
 
-- **统一DataSourceRegistry**: 可配置的fallback链，自动降级
-- **智能缓存**: Redis缓存 + 字段级TTL策略
-- **冲突检测**: 多数据源交叉验证，阈值共识策略
-- **可追溯**: 完整的SourceMeta记录（来源、端点、时间戳、TTL）
-- **异步优先**: 全异步设计，高并发性能
+> The original `onchain_hub` has been deprecated and replaced by the granular `onchain_*` tools above.
 
-## 🚀 快速开始
+## 🏗️ Architecture
 
-### 1. 环境要求
+- **Unified DataSourceRegistry**: Configurable fallback chains with automatic degradation
+- **Smart Caching**: Redis-backed caching with field-level TTL policies
+- **Conflict Detection**: Cross-source validation with threshold-based consensus
+- **Full Traceability**: Complete SourceMeta records (provider, endpoint, timestamp, TTL)
+- **Async-First**: Fully async design for high-concurrency performance
 
-- Python 3.11+
-- Redis 7.0+
-- Poetry 1.7+
+## 🚀 Quick Start
 
-### 2. 安装
+### Prerequisites
+
+- Docker & Docker Compose
+- API keys (see Configuration below)
+
+### Installation
+
+1. **Clone the repository**
+```bash
+git clone <repository-url>
+cd crypto_mcps
+```
+
+2. **Configure environment**
+```bash
+# Copy environment template
+cp docker/.env.example docker/.env
+
+# Edit .env and add your API keys
+vim docker/.env
+```
+
+3. **Configure API Keys**
+
+Edit `docker/.env` and add at least:
+
+- `COINGECKO_API_KEY` (optional for free tier)
+- `COINMARKETCAP_API_KEY` (free tier available)
+- `ETHERSCAN_API_KEY` (for holder data)
+- `GITHUB_TOKEN` (for dev activity, optional)
+- Additional keys for onchain tools as needed
+
+### Running the Server
 
 ```bash
-# 克隆项目
-cd hubrium_mcp/mcp_server
+cd docker
 
-# 安装依赖
-poetry install
+# Start production MCP HTTP server
+make start
 
-# 复制环境变量模板
-cp .env.example .env
-
-# 编辑.env，填入API密钥
-vim .env
+# Server will be available at:
+# - MCP HTTP: http://localhost:8000
+# - Health: http://localhost:8000/health
+# - Tools: http://localhost:8000/tools
 ```
 
-### 3. 配置API密钥
+**Other Commands:**
+```bash
+make stop      # Stop the server
+make restart   # Restart the server
+make logs      # View server logs
+```
 
-编辑 `.env` 文件，至少需要：
-
-- `COINGECKO_API_KEY` (可选，免费版无需密钥)
-- `COINMARKETCAP_API_KEY` (注册免费账号获取)
-- `ETHERSCAN_API_KEY` (用于持有者数据)
-- `GITHUB_TOKEN` (用于开发活跃度，可选)
-
-### 4. 启动Redis
+### Verification
 
 ```bash
-# Docker方式
-docker run -d -p 6379:6379 redis:7-alpine
+# Check health
+curl http://localhost:8000/health
 
-# 或使用本地Redis
-redis-server
+# List available tools
+curl http://localhost:8000/tools
 ```
 
-### 5. 运行服务器
+## 🧪 Testing
+
+### Run Tests
 
 ```bash
-# 开发模式
-poetry run python -m src.server.app
+cd docker
 
-# 或使用脚本（如果已实现）
-poetry run mcp-server
+# Build test containers
+make build
+
+# Run all tests (unit + integration)
+make test
+
+# Run specific test suites
+make test-unit         # Unit tests only
+make test-integration  # Integration tests only
+make test-live-free    # Live tests with free APIs (no keys required)
+make test-live         # Live tests with real API keys
+
+# Run tests with coverage
+make test-cov
+
+# Re-run failed tests
+make test-failed
+
+# Run tests matching a pattern
+make test-pattern PATTERN=crypto
 ```
 
-## 🧪 开发
-
-### 运行测试
+### Test Utilities
 
 ```bash
-# 所有测试
-poetry run pytest
+# View test logs
+make logs
 
-# 仅单元测试
-poetry run pytest -m unit
+# Open shell in test container
+make shell
 
-# 仅集成测试
-poetry run pytest -m integration
+# Connect to test Redis
+make redis-cli
 
-# 带覆盖率
-poetry run pytest --cov=src --cov-report=html
+# Clean up test containers
+make clean
 ```
 
-### 代码格式化
-
-```bash
-# 格式化代码
-poetry run black src/ tests/
-
-# 检查代码质量
-poetry run ruff check src/ tests/
-
-# 类型检查
-poetry run mypy src/
-```
-
-### 添加依赖
-
-```bash
-# 生产依赖
-poetry add <package>
-
-# 开发依赖
-poetry add --group dev <package>
-```
-
-## 📁 项目结构
+## 📁 Project Structure
 
 ```
-mcp_server/
+crypto_mcps/
 ├── src/
-│   ├── server/              # MCP服务器主程序
-│   ├── core/                # 核心抽象（基类、Registry、Models）
-│   ├── tools/               # 8个MCP工具实现
-│   ├── data_sources/        # 数据源适配器
-│   ├── middleware/          # 缓存、限流、降级
-│   └── utils/               # 工具函数
-├── config/                  # 配置文件（TTL策略、数据源优先级）
-├── tests/                   # 测试套件
-└── scripts/                 # 辅助脚本
+│   ├── server/              # MCP server implementation
+│   ├── core/                # Core abstractions (base classes, Registry, Models)
+│   ├── tools/               # MCP tool implementations
+│   ├── data_sources/        # Data source adapters
+│   ├── middleware/          # Caching, rate limiting, circuit breakers
+│   └── utils/               # Utility functions
+├── config/                  # Configuration files (TTL policies, data sources)
+├── tests/                   # Test suite
+├── docker/                  # Docker configuration & Makefile
+│   ├── Dockerfile
+│   ├── docker-compose.yml       # Production
+│   ├── docker-compose.test.yml  # Testing
+│   ├── Makefile
+│   └── .env                 # Environment variables (create from .env.example)
+└── scripts/                 # Helper scripts
 ```
 
-## 📚 配置文件说明
+## 📚 Configuration
 
 ### config/ttl_policies.yaml
-定义每个工具的字段级缓存TTL策略。
+Defines field-level cache TTL policies for each tool.
 
 ### config/data_sources.yaml
-定义数据源优先级、fallback链和冲突阈值。
+Defines data source priorities, fallback chains, and conflict thresholds.
 
-### .env
-环境变量和API密钥配置。
+### docker/.env
+Environment variables and API key configuration.
 
-## 🔧 工具使用示例
+## 🔧 Tool Usage Example
 
 ### crypto_overview
 
-```python
-# MCP调用示例
+**Request:**
+```json
 {
   "tool": "crypto_overview",
   "arguments": {
@@ -168,7 +193,7 @@ mcp_server/
 }
 ```
 
-返回：
+**Response:**
 ```json
 {
   "symbol": "BTC",
@@ -182,7 +207,7 @@ mcp_server/
     {
       "provider": "coingecko",
       "endpoint": "/coins/bitcoin",
-      "as_of_utc": "2025-11-18T12:00:00Z",
+      "as_of_utc": "2025-12-06T12:00:00Z",
       "ttl_seconds": 60,
       "degraded": false
     }
@@ -192,16 +217,26 @@ mcp_server/
 }
 ```
 
-## 🤝 贡献
+## 🤝 Contributing
 
-详见根目录 [../docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for architectural details.
 
-## 📄 许可
+## 📄 License
 
-详见根目录 LICENSE 文件
+See LICENSE file for details.
 
-## 🔗 相关链接
+## 🔗 Documentation
 
-- [工具规范v3](../docs/crypto-macro-mcp-tools-v3.md)
-- [数据源计划v3](../docs/crypto-data-sources-plan-v3.md)
-- [架构设计](../docs/ARCHITECTURE.md)
+- [Tool Specifications v3](docs/crypto-macro-mcp-tools-v3.md)
+- [Data Sources Plan v3](docs/crypto-data-sources-plan-v3.md)
+- [Architecture Design](docs/ARCHITECTURE.md)
+
+## 🐳 Docker Services
+
+**Production Environment:**
+- MCP HTTP Server: `http://localhost:8000`
+- Redis: `localhost:6379`
+
+**Test Environment:**
+- Separate isolated containers for testing
+- Automatic cleanup with `make clean`

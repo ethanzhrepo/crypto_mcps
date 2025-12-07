@@ -1,0 +1,128 @@
+[tool.poetry]
+name = "hubrium-mcp-server"
+version = "0.1.0"
+description = "Crypto + Macro MCP Tools v3 - 8个域中心工具的MCP服务器"
+authors = ["Hubrium Team"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+# MCP协议
+mcp = "^1.0.0"
+# HTTP服务器
+fastapi = "^0.109.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}
+# HTTP客户端
+httpx = "^0.28.0"
+# 数据处理与验证
+pydantic = "^2.5.0"
+pydantic-settings = "^2.1.0"
+pandas = "^2.1.0"
+numpy = "^2.1.0"
+# 缓存与存储
+redis = {extras = ["hiredis"], version = "^5.0.0"}
+# 配置管理
+python-dotenv = "^1.0.0"
+pyyaml = "^6.0"
+# 日志
+structlog = "^24.1.0"
+colorama = "^0.4.6"
+# 工具库
+python-dateutil = "^2.8.2"
+# HTML解析
+beautifulsoup4 = "^4.12.0"
+# 可选：交易所统一接口
+ccxt = {version = "^4.2.0", optional = true}
+
+[tool.poetry.group.dev.dependencies]
+# 测试
+pytest = "^7.4.0"
+pytest-asyncio = "^0.23.0"
+pytest-mock = "^3.12.0"
+pytest-cov = "^4.1.0"
+pytest-timeout = "^2.2.0"
+# 代码质量
+black = "^24.1.0"
+ruff = "^0.1.0"
+mypy = "^1.8.0"
+# 类型stubs
+types-redis = "^4.6.0"
+types-pyyaml = "^6.0.12"
+types-python-dateutil = "^2.8.19"
+# 开发工具
+ipython = "^8.20.0"
+
+[tool.poetry.extras]
+ccxt = ["ccxt"]
+
+[tool.poetry.scripts]
+mcp-server = "src.server.app:main"
+mcp-server-http = "src.server.http_app:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = """
+    -v
+    --strict-markers
+    --tb=short
+    --cov=src
+    --cov-report=term-missing
+    --cov-report=html
+"""
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "slow: Slow running tests",
+]

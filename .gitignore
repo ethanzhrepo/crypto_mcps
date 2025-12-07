@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# 配置文件（包含密钥）
+config/api_keys.yaml
+!config/api_keys.yaml.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# 测试
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+coverage.xml
+*.cover
+
+# 日志
+*.log
+logs/
+
+# 缓存
+*.cache
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+
+# Poetry
+poetry.lock
+
+# 临时文件
+*.tmp
+*.bak
+.cache/
+.env.test

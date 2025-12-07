@@ -1,0 +1,51 @@
+# Hubrium MCP Server Test/HTTP Dockerfile
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HTTP_HOST=0.0.0.0 \
+    HTTP_PORT=8000
+
+# Install system dependencies (including curl for health checks)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN curl -sSL https://install.python-poetry.org | python3 - && \
+    ln -s /root/.local/bin/poetry /usr/local/bin/poetry
+
+# Set working directory
+WORKDIR /app
+
+# Copy dependency files first for better caching
+COPY pyproject.toml poetry.lock* README.md ./
+
+# Install dependencies only (without the project itself)
+RUN poetry config virtualenvs.create false && \
+    poetry install --no-interaction --no-ansi --no-root
+
+# Copy application code and tests
+COPY src ./src
+COPY config ./config
+COPY tests ./tests
+
+# Now install the project itself
+RUN poetry install --no-interaction --no-ansi
+
+# Create directories for test artifacts
+RUN mkdir -p /app/htmlcov /app/test-reports
+
+# Set PYTHONPATH
+ENV PYTHONPATH=/app
+
+# Expose HTTP port
+EXPOSE 8000
+
+# Default command runs HTTP server (can be overridden for tests)
+CMD ["mcp-server-http"]

@@ -1,0 +1,87 @@
+# Hubrium MCP Server - Test Environment
+# Usage: docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit
+
+services:
+  # Redis for integration tests
+  redis-test:
+    image: redis:7-alpine
+    container_name: hubrium-redis-test
+    ports:
+      - "6380:6379"
+    command: redis-server --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - mcp-test-network
+
+  # MCP HTTP Server (for fin_agent integration)
+  mcp-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.test
+    container_name: hubrium-mcp-http-server
+    ports:
+      - "8001:8000"  # Expose on 8001 to avoid conflict with fin_agent
+    env_file:
+      - .env.test
+    environment:
+      - REDIS_URL=redis://redis-test:6379/0
+      - LOG_LEVEL=INFO
+      - ENVIRONMENT=test
+      - PYTHONPATH=/app
+      - HTTP_HOST=0.0.0.0
+      - HTTP_PORT=8000
+      - TELEGRAM_SCRAPER_URL=http://host.docker.internal:8000
+      - TELEGRAM_SCRAPER_INDEX=telegram_messages
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      redis-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    volumes:
+      # Mount test reports output
+      - ./reports:/app/htmlcov
+      - ./reports:/app/test-reports
+      - ./reports/tmp:/tmp
+    networks:
+      - mcp-test-network
+    # Default: run HTTP server (override with pytest for tests)
+    command: ["mcp-server-http"]
+
+  # Test runner container that executes pytest against the live HTTP server
+  mcp-test-runner:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.test
+    env_file:
+      - .env.test
+    environment:
+      - PYTHONPATH=/app
+      - MCP_HTTP_BASE_URL=http://mcp-test:8000
+    depends_on:
+      mcp-test:
+        condition: service_healthy
+    networks:
+      - mcp-test-network
+    volumes:
+      - ./reports:/app/htmlcov
+      - ./reports:/app/test-reports
+      - ./reports/tmp:/tmp
+    entrypoint: ["pytest"]
+
+volumes:
+  test-reports:
+    driver: local
+
+networks:
+  mcp-test-network:
+    driver: bridge

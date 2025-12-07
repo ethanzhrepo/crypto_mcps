@@ -1,0 +1,174 @@
+# TTL缓存策略配置（单位：秒）
+# 按工具和字段类型定义缓存时长
+
+crypto_overview:
+  # 基础资料（名称、描述、官网等）
+  basic: 86400  # 24小时
+
+  # 市场指标（价格、市值、成交量）
+  market: 60  # 1分钟
+
+  # 供应结构（流通量、总量）
+  supply: 3600  # 1小时
+
+  # 持有者集中度
+  holders: 21600  # 6小时
+
+  # 社交链接
+  social: 86400  # 24小时
+
+  # 板块分类
+  sector: 86400  # 24小时
+
+  # 开发活跃度
+  dev_activity: 21600  # 6小时
+
+market_microstructure:
+  # 实时价格
+  ticker: 60  # 1分钟
+
+  # K线（不同周期）
+  klines_1m: 60  # 1分钟
+  klines_5m: 120  # 2分钟
+  klines_15m: 300  # 5分钟
+  klines_1h: 600  # 10分钟
+  klines_1d: 3600  # 1小时
+
+  # 订单簿（深度）
+  orderbook: 10  # 10秒
+
+  # 逐笔成交
+  trades: 60  # 1分钟
+
+  # 合并深度
+  aggregated_orderbook: 10  # 10秒
+
+  # 成交量分布
+  volume_profile: 1800  # 30分钟
+
+  # 主动买卖流
+  taker_flow: 300  # 5分钟
+
+  # 滑点估算（不缓存，实时计算）
+  slippage: 0
+
+  # 场所规格
+  venue_specs: 604800  # 7天
+
+  # 板块统计
+  sector_stats: 21600  # 6小时
+
+derivatives_hub:
+  # 资金费率
+  funding_rate: 300  # 5分钟
+
+  # 未平仓量
+  open_interest: 120  # 2分钟
+
+  # 清算事件
+  liquidations: 60  # 1分钟
+
+  # 多空比
+  long_short_ratio: 300  # 5分钟
+
+  # 基差曲线
+  basis_curve: 300  # 5分钟
+
+  # 期限结构
+  term_structure: 300  # 5分钟
+
+  # 期权曲面
+  options_surface: 300  # 5分钟
+
+  # 期权指标
+  options_metrics: 900  # 15分钟
+
+  # 借贷利率
+  borrow_rates: 1800  # 30分钟
+
+# DeFiLlama价格数据（coins/prices endpoints）
+defillama_prices:
+  # 当前价格（实时）
+  current_prices: 60  # 1分钟
+
+  # 历史价格（不变数据）
+  historical_prices: 86400  # 24小时
+
+  # 价格图表
+  price_chart: 3600  # 1小时
+
+  # 价格变化百分比
+  price_percentage: 300  # 5分钟
+
+  # 首次价格（不变数据）
+  first_price: 604800  # 7天
+
+  # 区块信息（不变数据）
+  block_info: 86400  # 24小时
+
+# DeFiLlama协议数据（TVL, fees, etc.）
+defillama_protocols:
+  # 协议TVL（实时变化）
+  protocol_tvl: 300  # 5分钟
+
+  # 协议列表summary（当前TVL快照，较慢变化）
+  protocols_summary: 3600  # 1小时（可通过配置调整）
+
+  # 协议费用（慢变化）
+  protocol_fees: 21600  # 6小时（增加缓存时间）
+
+  # 稳定币统计（慢变化）
+  stablecoins: 10800  # 3小时（增加缓存时间）
+
+  # CEX储备列表
+  cex_list: 1800  # 30分钟
+
+  # CEX单个储备
+  cex_reserves: 1800  # 30分钟
+
+  # 桥接交易量（历史数据）
+  bridge_volumes: 10800  # 3小时（增加缓存时间）
+
+  # 收益率数据
+  yields: 300  # 5分钟
+
+  # 借贷利率
+  borrow_rates: 1800  # 30分钟
+
+  # 链TVL（实时变化）
+  chain_tvl: 300  # 5分钟
+
+  # DEX交易量（实时变化）
+  dex_volumes: 300  # 5分钟
+
+web_research_search:
+  # 通用搜索
+  general: 3600  # 1小时
+
+  # 加密原生搜索
+  crypto: 3600  # 1小时
+
+  # 研报检索
+  reports: 43200  # 12小时
+
+macro_hub:
+  # FRED序列（历史数据永久缓存，最新值）
+  series: 86400  # 24小时
+
+  # 宏观日历
+  calendar: 86400  # 24小时
+
+  # Fed数据（TGA/RRP）
+  fed: 43200  # 12小时
+
+  # 传统指数
+  indices: 300  # 5分钟
+
+  # ETF资金流
+  etf_flows: 86400  # 24小时
+
+  # 宏观仪表盘
+  dashboard: 3600  # 1小时
+
+# 全局默认TTL
+default: 300  # 5分钟

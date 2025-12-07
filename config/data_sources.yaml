@@ -1,0 +1,175 @@
+# 数据源优先级与fallback链配置
+# priority: PRIMARY(1) > SECONDARY(2) > TERTIARY(3) > FALLBACK(4)
+
+crypto_overview:
+  # 基础资料
+  basic:
+    - name: coingecko
+      priority: PRIMARY
+      timeout: 5.0
+      rate_limit: 50  # req/min
+    - name: coinmarketcap
+      priority: SECONDARY
+      timeout: 5.0
+      rate_limit: 30
+
+  # 市场指标（价格、市值等）
+  market:
+    - name: coingecko
+      priority: PRIMARY
+      timeout: 5.0
+      rate_limit: 50
+    - name: coinmarketcap
+      priority: SECONDARY
+      timeout: 5.0
+      rate_limit: 30
+
+  # 供应结构
+  supply:
+    - name: coingecko
+      priority: PRIMARY
+      timeout: 5.0
+    - name: etherscan
+      priority: SECONDARY
+      timeout: 10.0
+
+  # 持有者集中度
+  holders:
+    - name: etherscan
+      priority: PRIMARY
+      timeout: 10.0
+      rate_limit: 5
+
+  # 社交链接
+  social:
+    - name: coingecko
+      priority: PRIMARY
+      timeout: 5.0
+
+  # 板块分类
+  sector:
+    - name: coingecko
+      priority: PRIMARY
+      timeout: 5.0
+
+  # 开发活跃度
+  dev_activity:
+    - name: github
+      priority: PRIMARY
+      timeout: 10.0
+      rate_limit: 60
+
+market_microstructure:
+  ticker:
+    - name: binance
+      priority: PRIMARY
+      timeout: 3.0
+    - name: okx
+      priority: SECONDARY
+      timeout: 3.0
+
+  klines:
+    - name: binance
+      priority: PRIMARY
+      timeout: 5.0
+    - name: okx
+      priority: SECONDARY
+      timeout: 5.0
+
+  orderbook:
+    - name: binance
+      priority: PRIMARY
+      timeout: 2.0
+    - name: okx
+      priority: SECONDARY
+      timeout: 2.0
+
+  trades:
+    - name: binance
+      priority: PRIMARY
+      timeout: 3.0
+    - name: okx
+      priority: SECONDARY
+      timeout: 3.0
+
+  venue_specs:
+    - name: binance
+      priority: PRIMARY
+      timeout: 5.0
+    - name: okx
+      priority: SECONDARY
+      timeout: 5.0
+
+# 冲突检测阈值
+conflict_thresholds:
+  # 价格差异阈值（百分比）
+  price_diff_percent: 0.5
+
+  # 市值差异阈值（百分比）
+  market_cap_diff_percent: 1.0
+
+  # 成交量差异阈值（百分比）
+  volume_diff_percent: 5.0
+
+  # 供应量差异阈值（百分比）
+  supply_diff_percent: 1.0
+
+# 数据源基础配置
+data_source_configs:
+  coingecko:
+    base_url: "https://api.coingecko.com/api/v3"
+    requires_api_key: false  # 免费版不需要
+    headers:
+      accept: "application/json"
+
+  coinmarketcap:
+    base_url: "https://pro-api.coinmarketcap.com/v1"
+    requires_api_key: true
+    headers:
+      accept: "application/json"
+
+  etherscan:
+    base_url: "https://api.etherscan.io/api"
+    requires_api_key: true
+
+  bscscan:
+    base_url: "https://api.bscscan.com/api"
+    requires_api_key: true
+
+  github:
+    base_url: "https://api.github.com"
+    requires_api_key: false  # 无token时有更低限流
+    headers:
+      accept: "application/vnd.github.v3+json"
+
+  binance:
+    base_url: "https://api.binance.com/api/v3"
+    requires_api_key: false
+
+  okx:
+    base_url: "https://www.okx.com/api/v5"
+    requires_api_key: false
+
+  coinbase:
+    base_url: "https://api.exchange.coinbase.com"
+    requires_api_key: false
+
+  telegram_scraper:
+    base_url: "http://localhost:8000"
+    index_name: "telegram_messages"
+    requires_api_key: false
+
+# Web Research / News Search 配置
+web_research:
+  news_sources:
+    telegram_scraper:
+      enabled: true
+      top_n: 50
+
+    bing_news:
+      enabled: true
+      top_n: 20
+
+    kaito:
+      enabled: false
+      top_n: 30

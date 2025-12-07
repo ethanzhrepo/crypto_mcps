@@ -1,0 +1,50 @@
+# API密钥配置示例
+# 复制此文件为 api_keys.yaml 并填入实际密钥
+# 注意：api_keys.yaml 已在 .gitignore 中，不会被提交到Git
+
+# CoinGecko (免费版无需API key)
+# Pro版: https://www.coingecko.com/en/api/pricing
+coingecko:
+  api_key: ""  # 留空表示使用免费版
+
+# CoinMarketCap (需要注册免费账号)
+# 注册: https://coinmarketcap.com/api/
+coinmarketcap:
+  api_key: "your-cmc-api-key-here"
+
+# Etherscan (免费账号即可)
+# 注册: https://etherscan.io/myapikey
+etherscan:
+  api_key: "your-etherscan-api-key-here"
+
+# BSCScan (BSC链浏览器)
+# 注册: https://bscscan.com/myapikey
+bscscan:
+  api_key: "your-bscscan-api-key-here"
+
+# PolygonScan (Polygon链浏览器)
+# 注册: https://polygonscan.com/myapikey
+polygonscan:
+  api_key: "your-polygonscan-api-key-here"
+
+# Arbiscan (Arbitrum链浏览器)
+# 注册: https://arbiscan.io/myapikey
+arbiscan:
+  api_key: "your-arbiscan-api-key-here"
+
+# GitHub Personal Access Token
+# 创建: https://github.com/settings/tokens
+# 所需权限: public_repo (只读公共仓库)
+github:
+  token: "your-github-token-here"
+
+# Messari API (可选，付费)
+# 网站: https://messari.io/api
+messari:
+  api_key: ""
+
+# 推荐优先级：
+# 1. 必须 - CoinMarketCap（用于市场数据交叉验证）
+# 2. 必须 - Etherscan（用于持有者数据）
+# 3. 推荐 - GitHub Token（无token时限流更严）
+# 4. 可选 - 其他链浏览器（仅在需要时）

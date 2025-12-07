@@ -1,0 +1,849 @@
+"""
+MCP服务器主程序
+"""
+import asyncio
+import signal
+import sys
+from typing import Any
+
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
+
+from src.core.data_source_registry import registry
+from src.core.models import (
+    CryptoOverviewInput,
+    DerivativesHubInput,
+    DrawChartInput,
+    MacroHubInput,
+    MarketMicrostructureInput,
+    OnchainActivityInput,
+    OnchainBridgeVolumesInput,
+    OnchainContractRiskInput,
+    OnchainDEXLiquidityInput,
+    OnchainGovernanceInput,
+    OnchainStablecoinsCEXInput,
+    OnchainTVLFeesInput,
+    OnchainTokenUnlocksInput,
+    OnchainWhaleTransfersInput,
+    WebResearchInput,
+)
+from src.data_sources.binance import BinanceClient
+from src.data_sources.coingecko.client import CoinGeckoClient
+from src.data_sources.coinmarketcap.client import CoinMarketCapClient
+from src.data_sources.defillama import DefiLlamaClient
+from src.data_sources.deribit import DeribitClient
+from src.data_sources.etherscan.client import EtherscanClient
+from src.data_sources.fred import FREDClient
+from src.data_sources.github.client import GitHubClient
+from src.data_sources.macro import MacroDataClient
+from src.data_sources.okx import OKXClient
+from src.data_sources.search import SearchClient
+from src.data_sources.telegram_scraper import TelegramScraperClient
+from src.data_sources.thegraph import TheGraphClient
+from src.data_sources.yfinance import YahooFinanceClient
+from src.middleware.cache import cache_manager
+from src.tools.chart import DrawChartTool
+from src.tools.crypto.overview import crypto_overview_tool
+from src.tools.derivatives import DerivativesHubTool
+from src.tools.macro import MacroHubTool
+from src.tools.market import MarketMicrostructureTool
+from src.tools.onchain.activity import OnchainActivityTool
+from src.tools.onchain.bridge_volumes import OnchainBridgeVolumesTool
+from src.tools.onchain.contract_risk import OnchainContractRiskTool
+from src.tools.onchain.dex_liquidity import OnchainDEXLiquidityTool
+from src.tools.onchain.governance import OnchainGovernanceTool
+from src.tools.onchain.stablecoins_cex import OnchainStablecoinsCEXTool
+from src.tools.onchain.token_unlocks import OnchainTokenUnlocksTool
+from src.tools.onchain.tvl_fees import OnchainTVLFeesTool
+from src.tools.onchain.whale_transfers import OnchainWhaleTransfersTool
+from src.tools.web_research import WebResearchTool
+from src.utils.config import config
+from src.utils.logger import get_logger, setup_logging
+
+logger = get_logger(__name__)
+
+
+class MCPServer:
+    """MCP服务器"""
+
+    def __init__(self):
+        self.server = Server("hubrium-mcp-server")
+        self._shutdown = False
+        self.market_microstructure_tool = None
+        self.derivatives_hub_tool = None
+        self.web_research_tool = None
+        self.macro_hub_tool = None
+        self.draw_chart_tool = None
+        # 链上工具（拆分自原 onchain_hub）
+        self.onchain_tvl_fees_tool = None
+        self.onchain_stablecoins_cex_tool = None
+        self.onchain_bridge_volumes_tool = None
+        self.onchain_dex_liquidity_tool = None
+        self.onchain_governance_tool = None
+        self.onchain_whale_transfers_tool = None
+        self.onchain_token_unlocks_tool = None
+        self.onchain_activity_tool = None
+        self.onchain_contract_risk_tool = None
+
+    async def initialize(self):
+        """初始化服务器"""
+        logger.info("Initializing MCP server...")
+
+        # 注册数据源
+        await self._register_data_sources()
+
+        # 注册工具
+        self._register_tools()
+
+        logger.info("MCP server initialized successfully")
+
+    async def _register_data_sources(self):
+        """注册所有数据源到Registry"""
+        logger.info("Registering data sources...")
+
+        # Binance (交易所数据 - 主源)
+        binance = BinanceClient()
+        registry.register("binance", binance)
+
+        # OKX (交易所数据 - 备用源)
+        okx = OKXClient()
+        registry.register("okx", okx)
+
+        # DefiLlama (DeFi数据)
+        defillama = DefiLlamaClient()
+        registry.register("defillama", defillama)
+
+        # Telegram Scraper (Telegram消息数据)
+        telegram_scraper_client = None
+        try:
+            telegram_scraper_client = TelegramScraperClient(
+                base_url=config.settings.telegram_scraper_url,
+                index_name=config.settings.telegram_scraper_index,
+            )
+            registry.register("telegram_scraper", telegram_scraper_client)
+            logger.info(
+                "telegram_scraper_client_initialized",
+                url=config.settings.telegram_scraper_url,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to initialize Telegram Scraper client: {e}")
+
+        # 加载新闻源配置
+        news_source_config = None
+        try:
+            import yaml
+            from pathlib import Path
+
+            config_path = Path(__file__).parent.parent.parent / "config" / "data_sources.yaml"
+            with open(config_path) as f:
+                yaml_config = yaml.safe_load(f)
+                news_source_config = yaml_config.get("web_research", {}).get("news_sources", {})
+        except Exception as e:
+            logger.warning(f"Failed to load news source config: {e}")
+
+        # Search (搜索数据)
+        brave_key = config.get_api_key("brave_search")
+        bing_key = config.get_api_key("bing_search")
+        kaito_key = config.get_api_key("kaito")
+        search_client = SearchClient(
+            brave_api_key=brave_key,
+            bing_api_key=bing_key,
+            kaito_api_key=kaito_key,
+            telegram_scraper_client=telegram_scraper_client,
+            news_source_config=news_source_config,
+        )
+        registry.register("search", search_client)
+
+        # Macro Data (宏观数据 - 基础)
+        macro_client = MacroDataClient()
+        registry.register("macro", macro_client)
+
+        # FRED (美联储经济数据)
+        fred_client = None
+        fred_key = config.get_api_key("fred")
+        if fred_key:
+            try:
+                fred_client = FREDClient(api_key=fred_key)
+                registry.register("fred", fred_client)
+                logger.info("FRED client initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize FRED client: {e}")
+        else:
+            logger.warning(
+                "FRED API key not configured. Macro data will be limited. "
+                "Get free key at: https://fredaccount.stlouisfed.org/apikeys"
+            )
+
+        # Yahoo Finance (传统市场数据 - 免费无需key)
+        yfinance_client = None
+        try:
+            yfinance_client = YahooFinanceClient()
+            registry.register("yfinance", yfinance_client)
+            logger.info("Yahoo Finance client initialized successfully")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Yahoo Finance client: {e}")
+
+        # Investing.com Calendar (财经日历 - 免费无需key)
+        calendar_client = None
+        try:
+            calendar_client = InvestingCalendarClient()
+            registry.register("investing_calendar", calendar_client)
+            logger.info("Investing.com calendar client initialized successfully")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Investing.com calendar client: {e}")
+
+        # The Graph (DEX流动性 - 免费公共子图)
+        thegraph_client = None
+        try:
+            thegraph_client = TheGraphClient()
+            registry.register("thegraph", thegraph_client)
+            logger.info("The Graph client initialized successfully")
+        except Exception as e:
+            logger.warning(f"Failed to initialize The Graph client: {e}")
+
+        # CoinGecko (加密货币市场数据 - 免费/Pro可选)
+        coingecko = CoinGeckoClient(api_key=config.get_api_key("coingecko"))
+        registry.register("coingecko", coingecko)
+
+        # Deribit (加密货币期权数据 - 免费公共数据)
+        deribit = DeribitClient()
+        registry.register("deribit", deribit)
+
+        # 初始化所有工具（按依赖顺序）
+        self.market_microstructure_tool = MarketMicrostructureTool(
+            binance_client=binance,
+            okx_client=okx,
+            coingecko_client=coingecko,
+        )
+        self.derivatives_hub_tool = DerivativesHubTool(
+            binance_client=binance,
+            okx_client=okx,
+            deribit_client=deribit,
+        )
+        self.web_research_tool = WebResearchTool(search_client=search_client)
+        self.macro_hub_tool = MacroHubTool(
+            macro_client=macro_client,
+            fred_client=fred_client,
+            yfinance_client=yfinance_client,
+            calendar_client=calendar_client,
+        )
+        self.draw_chart_tool = DrawChartTool(market_tool=self.market_microstructure_tool)
+
+        # 链上数据工具家族（拆分自原 onchain_hub）
+        self.onchain_tvl_fees_tool = OnchainTVLFeesTool(defillama_client=defillama)
+        self.onchain_stablecoins_cex_tool = OnchainStablecoinsCEXTool(
+            defillama_client=defillama
+        )
+        self.onchain_bridge_volumes_tool = OnchainBridgeVolumesTool(
+            defillama_client=defillama
+        )
+        self.onchain_dex_liquidity_tool = OnchainDEXLiquidityTool(
+            thegraph_client=thegraph_client
+        )
+        self.onchain_governance_tool = OnchainGovernanceTool()
+        self.onchain_whale_transfers_tool = OnchainWhaleTransfersTool()
+        self.onchain_token_unlocks_tool = OnchainTokenUnlocksTool()
+        self.onchain_activity_tool = OnchainActivityTool()
+        self.onchain_contract_risk_tool = OnchainContractRiskTool()
+
+        # CoinMarketCap
+        cmc_key = config.get_api_key("coinmarketcap")
+        if cmc_key:
+            cmc = CoinMarketCapClient(api_key=cmc_key)
+            registry.register("coinmarketcap", cmc)
+        else:
+            logger.warning("CoinMarketCap API key not configured, skipping")
+
+        # Etherscan (主网)
+        etherscan_key = config.get_api_key("etherscan")
+        if etherscan_key:
+            etherscan = EtherscanClient(chain="ethereum", api_key=etherscan_key)
+            registry.register("etherscan", etherscan)
+        else:
+            logger.warning("Etherscan API key not configured, skipping")
+
+        # GitHub
+        github_token = config.get_api_key("github")
+        github = GitHubClient(token=github_token)
+        registry.register("github", github)
+
+        logger.info(f"Registered {len(registry._sources)} data sources")
+        logger.info("All MCP tools initialized successfully")
+
+    def _register_tools(self):
+        """注册MCP工具"""
+        logger.info("Registering MCP tools...")
+
+        # crypto_overview工具
+        @self.server.list_tools()
+        async def list_tools() -> list[dict]:
+            return [
+                {
+                    "name": "crypto_overview",
+                    "description": "One-shot comprehensive token overview: basic profile, market metrics, supply, holder concentration, social links, sector classification, and developer activity.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "Token symbol, e.g. BTC, ETH, ARB"
+                            },
+                            "token_address": {
+                                "type": "string",
+                                "description": "Contract address (optional, for disambiguation)"
+                            },
+                            "chain": {
+                                "type": "string",
+                                "description": "Chain name, e.g. ethereum, bsc, arbitrum"
+                            },
+                            "vs_currency": {
+                                "type": "string",
+                                "default": "usd",
+                                "description": "Quote currency"
+                            },
+                            "include_fields": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "enum": ["all", "basic", "market", "supply", "holders", "social", "sector", "dev_activity"]
+                                },
+                                "default": ["all"],
+                                "description": "Fields to include"
+                            }
+                        },
+                        "required": ["symbol"]
+                    }
+                },
+                {
+                    "name": "market_microstructure",
+                    "description": "Real-time market microstructure data: ticker, klines, trades, orderbook depth, volume profile, taker flow, slippage estimation, and venue specifications.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair symbol, e.g. BTC/USDT, ETH/USDT"
+                            },
+                            "venues": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "default": ["binance"],
+                                "description": "List of venues/exchanges, e.g. ['binance', 'okx']; first one is used as primary venue"
+                            },
+                            "include_fields": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "enum": ["ticker", "klines", "trades", "orderbook", "volume_profile", "taker_flow", "slippage", "venue_specs", "sector_stats"]
+                                },
+                                "default": ["ticker", "orderbook"],
+                                "description": "Fields to include"
+                            },
+                            "kline_interval": {
+                                "type": "string",
+                                "default": "1h",
+                                "description": "K-line interval: 1m, 5m, 15m, 1h, 4h, 1d"
+                            },
+                            "kline_limit": {
+                                "type": "integer",
+                                "default": 100,
+                                "description": "Number of K-lines"
+                            },
+                            "orderbook_depth": {
+                                "type": "integer",
+                                "default": 20,
+                                "description": "Orderbook depth levels"
+                            },
+                            "trades_limit": {
+                                "type": "integer",
+                                "default": 100,
+                                "description": "Number of recent trades"
+                            },
+                            "slippage_size_usd": {
+                                "type": "number",
+                                "default": 10000,
+                                "description": "Order size for slippage estimation (USD)"
+                            }
+                        },
+                        "required": ["symbol"]
+                    }
+                },
+                {
+                    "name": "derivatives_hub",
+                    "description": "Derivatives data hub: funding rate, open interest, liquidations, long/short ratio, borrow rates, basis curve, term structure, options surface, and options metrics.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair symbol, e.g. BTC/USDT, ETH/USDT"
+                            },
+                            "include_fields": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "enum": ["funding_rate", "open_interest", "liquidations", "long_short_ratio", "basis_curve", "term_structure", "options_surface", "options_metrics", "borrow_rates"]
+                                },
+                                "default": ["funding_rate", "open_interest"],
+                                "description": "Fields to include"
+                            },
+                            "lookback_hours": {
+                                "type": "integer",
+                                "default": 24,
+                                "description": "Lookback hours for liquidation data"
+                            },
+                            "options_expiry": {
+                                "type": "string",
+                                "description": "Options expiry date (YYMMDD format)"
+                            }
+                        },
+                        "required": ["symbol"]
+                    }
+                },
+                {
+                    "name": "onchain_tvl_fees",
+                    "description": "On-chain DeFi metrics: protocol TVL and fees/revenue from DefiLlama.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "protocol": {
+                                "type": "string",
+                                "description": "Protocol name, e.g. uniswap, aave"
+                            },
+                            "chain": {
+                                "type": "string",
+                                "description": "Optional chain label, e.g. ethereum, arbitrum"
+                            }
+                        },
+                        "required": ["protocol"]
+                    }
+                },
+                {
+                    "name": "onchain_stablecoins_cex",
+                    "description": "Stablecoin metrics and centralized exchange reserves from DefiLlama.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "exchange": {
+                                "type": "string",
+                                "description": "Optional CEX name, e.g. binance, coinbase; if omitted returns aggregated view"
+                            }
+                        },
+                        "required": []
+                    }
+                },
+                {
+                    "name": "onchain_bridge_volumes",
+                    "description": "Cross-chain bridge volumes (24h/7d/30d) from DefiLlama.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "bridge": {
+                                "type": "string",
+                                "description": "Optional bridge name, e.g. stargate, hop; if omitted returns aggregated view"
+                            }
+                        },
+                        "required": []
+                    }
+                },
+                {
+                    "name": "onchain_dex_liquidity",
+                    "description": "Uniswap v3 DEX liquidity, pools, and optional tick distribution from The Graph.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "chain": {
+                                "type": "string",
+                                "description": "Chain name, e.g. ethereum, arbitrum, optimism, polygon"
+                            },
+                            "token_address": {
+                                "type": "string",
+                                "description": "Optional token address to list related pools"
+                            },
+                            "pool_address": {
+                                "type": "string",
+                                "description": "Optional Uniswap v3 pool address for single-pool detail"
+                            },
+                            "include_ticks": {
+                                "type": "boolean",
+                                "default": False,
+                                "description": "Whether to include tick-level liquidity distribution (only valid with pool_address)"
+                            }
+                        },
+                        "required": ["chain"]
+                    }
+                },
+                {
+                    "name": "onchain_governance",
+                    "description": "DAO governance proposals from Snapshot (off-chain) and Tally (on-chain).",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "chain": {
+                                "type": "string",
+                                "default": "ethereum",
+                                "description": "Chain name used to derive Tally chain_id, e.g. ethereum, arbitrum"
+                            },
+                            "snapshot_space": {
+                                "type": "string",
+                                "description": "Snapshot space id, e.g. uniswap.eth"
+                            },
+                            "governor_address": {
+                                "type": "string",
+                                "description": "On-chain governor contract address for Tally"
+                            }
+                        },
+                        "required": []
+                    }
+                },
+                {
+                    "name": "onchain_whale_transfers",
+                    "description": "Large on-chain transfers using Whale Alert API.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "token_symbol": {
+                                "type": "string",
+                                "description": "Optional token symbol, e.g. BTC, ETH; if omitted returns multi-asset view"
+                            },
+                            "min_value_usd": {
+                                "type": "number",
+                                "default": 500000.0,
+                                "description": "Minimum transfer size in USD"
+                            },
+                            "lookback_hours": {
+                                "type": "integer",
+                                "default": 24,
+                                "description": "Lookback window in hours"
+                            }
+                        },
+                        "required": []
+                    }
+                },
+                {
+                    "name": "onchain_token_unlocks",
+                    "description": "Token vesting and unlock schedules from Token Unlocks.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "token_symbol": {
+                                "type": "string",
+                                "description": "Optional token symbol; if omitted returns popular projects unlocks"
+                            }
+                        },
+                        "required": []
+                    }
+                },
+                {
+                    "name": "onchain_activity",
+                    "description": "Chain-level activity metrics (active addresses, tx count, gas usage) from Etherscan.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "chain": {
+                                "type": "string",
+                                "description": "Chain name, e.g. ethereum, arbitrum, optimism, polygon"
+                            },
+                            "protocol": {
+                                "type": "string",
+                                "description": "Optional protocol label used only for tagging"
+                            }
+                        },
+                        "required": ["chain"]
+                    }
+                },
+                {
+                    "name": "onchain_contract_risk",
+                    "description": "Smart contract risk analysis via GoPlus or Slither.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "contract_address": {
+                                "type": "string",
+                                "description": "Contract address to analyze"
+                            },
+                            "chain": {
+                                "type": "string",
+                                "description": "Chain name, e.g. ethereum, arbitrum, optimism, polygon"
+                            }
+                        },
+                        "required": ["contract_address", "chain"]
+                    }
+                },
+                {
+                    "name": "web_research_search",
+                    "description": "Multi-source web and news search: Telegram messages (Elasticsearch), Bing News, Brave Search, Kaito crypto news, and DuckDuckGo. Supports parallel search with configurable providers and result merging.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Search query"},
+                            "scope": {
+                                "type": "string",
+                                "enum": ["web", "news", "academic"],
+                                "default": "web",
+                                "description": "Search scope: web (general), news (crypto news from multiple sources), academic (research papers)"
+                            },
+                            "providers": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Specific providers to use (optional, e.g., ['telegram', 'bing_news', 'brave'])"
+                            },
+                            "time_range": {
+                                "type": "string",
+                                "description": "Time filter for news (e.g., '24h', '7d', '30d')"
+                            },
+                            "limit": {"type": "integer", "default": 10, "description": "Maximum results to return"}
+                        },
+                        "required": ["query"]
+                    }
+                },
+                {
+                    "name": "macro_hub",
+                    "description": "Macro economic and market indicators: Fear & Greed Index, FRED data (CPI, unemployment, GDP, rates), traditional indices (S&P500, NASDAQ, VIX), commodities (gold, oil), economic calendar, and CME FedWatch tool.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "mode": {
+                                "type": "string",
+                                "enum": ["dashboard", "fear_greed", "crypto_indices", "indices", "fed", "calendar"],
+                                "default": "dashboard",
+                                "description": "Query mode: dashboard (overview), or one of fear_greed, crypto_indices, indices, fed, calendar"
+                            },
+                            "country": {
+                                "type": "string",
+                                "default": "US",
+                                "description": "Country code for macro calendar, e.g. US"
+                            },
+                            "calendar_days": {
+                                "type": "integer",
+                                "default": 7,
+                                "description": "Number of days ahead for economic calendar (used when mode=calendar or dashboard)"
+                            },
+                            "calendar_min_importance": {
+                                "type": "integer",
+                                "default": 2,
+                                "description": "Minimum importance level (1-3) for calendar events"
+                            }
+                        },
+                        "required": []
+                    }
+                },
+                {
+                    "name": "draw_chart",
+                    "description": "Accepts client-provided Plotly chart configs (candlestick, line, area, bar, heatmap, scatter) and returns normalized chart metadata without fetching any market data.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "chart_type": {
+                                "type": "string",
+                                "description": "Chart types: line (折线图), candlestick (K线图), bar (柱状图), area (面积图), heatmap (热力图), scatter (散点图)"
+                            },
+                            "symbol": {"type": "string", "description": "Trading pair, e.g. BTC/USDT"},
+                            "title": {
+                                "type": "string",
+                                "description": "Optional chart title for front-end display"
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Optional timeframe label, e.g. 1m, 5m, 15m, 1h, 4h, 1d"
+                            },
+                            "indicators": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "default": [],
+                                "description": "Indicator labels recorded in the chart, e.g. ['MA20', 'RSI']"
+                            },
+                            "config": {
+                                "type": "object",
+                                "description": "Full Plotly chart config (data + layout) generated by the caller"
+                            }
+                        },
+                        "required": ["chart_type", "symbol", "config"]
+                    }
+                }
+            ]
+
+        @self.server.call_tool()
+        async def call_tool(name: str, arguments: dict) -> list[dict[str, Any]]:
+            """处理工具调用"""
+            try:
+                if name == "crypto_overview":
+                    # 验证输入
+                    input_params = CryptoOverviewInput(**arguments)
+
+                    # 执行工具
+                    result = await crypto_overview_tool.execute(input_params)
+
+                    # 返回结果
+                    return [
+                        {
+                            "type": "text",
+                            "text": result.model_dump_json(indent=2)
+                        }
+                    ]
+
+                elif name == "market_microstructure":
+                    # 验证输入
+                    input_params = MarketMicrostructureInput(**arguments)
+
+                    # 执行工具
+                    result = await self.market_microstructure_tool.execute(input_params)
+
+                    # 返回结果
+                    return [
+                        {
+                            "type": "text",
+                            "text": result.model_dump_json(indent=2)
+                        }
+                    ]
+
+                elif name == "derivatives_hub":
+                    input_params = DerivativesHubInput(**arguments)
+                    result = await self.derivatives_hub_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "web_research_search":
+                    input_params = WebResearchInput(**arguments)
+                    result = await self.web_research_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "macro_hub":
+                    input_params = MacroHubInput(**arguments)
+                    result = await self.macro_hub_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "draw_chart":
+                    input_params = DrawChartInput(**arguments)
+                    result = await self.draw_chart_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "onchain_tvl_fees":
+                    input_params = OnchainTVLFeesInput(**arguments)
+                    result = await self.onchain_tvl_fees_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "onchain_stablecoins_cex":
+                    input_params = OnchainStablecoinsCEXInput(**arguments)
+                    result = await self.onchain_stablecoins_cex_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "onchain_bridge_volumes":
+                    input_params = OnchainBridgeVolumesInput(**arguments)
+                    result = await self.onchain_bridge_volumes_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "onchain_dex_liquidity":
+                    input_params = OnchainDEXLiquidityInput(**arguments)
+                    result = await self.onchain_dex_liquidity_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "onchain_governance":
+                    input_params = OnchainGovernanceInput(**arguments)
+                    result = await self.onchain_governance_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "onchain_whale_transfers":
+                    input_params = OnchainWhaleTransfersInput(**arguments)
+                    result = await self.onchain_whale_transfers_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "onchain_token_unlocks":
+                    input_params = OnchainTokenUnlocksInput(**arguments)
+                    result = await self.onchain_token_unlocks_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "onchain_activity":
+                    input_params = OnchainActivityInput(**arguments)
+                    result = await self.onchain_activity_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "onchain_contract_risk":
+                    input_params = OnchainContractRiskInput(**arguments)
+                    result = await self.onchain_contract_risk_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                else:
+                    return [{"type": "text", "text": f"Unknown tool: {name}"}]
+
+            except Exception as e:
+                logger.error(f"Tool execution failed", tool=name, error=str(e))
+                return [
+                    {
+                        "type": "text",
+                        "text": f"Error: {str(e)}"
+                    }
+                ]
+
+        logger.info("Tools registered successfully")
+
+    async def cleanup(self):
+        """清理资源"""
+        logger.info("Cleaning up resources...")
+
+        # 关闭所有数据源连接
+        await registry.close_all()
+
+        # 关闭Redis连接
+        await cache_manager.close()
+
+        logger.info("Cleanup completed")
+
+    async def run(self):
+        """运行服务器"""
+        try:
+            # 初始化
+            await self.initialize()
+
+            # 运行stdio服务器
+            async with stdio_server() as (read_stream, write_stream):
+                logger.info("MCP server running on stdio")
+                await self.server.run(
+                    read_stream,
+                    write_stream,
+                    self.server.create_initialization_options()
+                )
+
+        except Exception as e:
+            logger.error(f"Server error", error=str(e))
+            raise
+
+        finally:
+            await self.cleanup()
+
+
+def handle_signal(signum, frame):
+    """处理退出信号"""
+    logger.info(f"Received signal {signum}, shutting down...")
+    sys.exit(0)
+
+
+def main():
+    """主入口"""
+    # 设置日志
+    log_level = config.settings.log_level
+    setup_logging(log_level)
+
+    logger.info(
+        "Starting Hubrium MCP Server",
+        environment=config.settings.environment,
+        log_level=log_level,
+    )
+
+    # 注册信号处理
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    # 创建并运行服务器
+    server = MCPServer()
+
+    try:
+        asyncio.run(server.run())
+    except KeyboardInterrupt:
+        logger.info("Server interrupted by user")
+    except Exception as e:
+        logger.error(f"Server failed", error=str(e))
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

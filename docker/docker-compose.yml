@@ -1,0 +1,51 @@
+# Hubrium MCP Server - Production Environment
+# Usage: docker-compose -f docker-compose.yml up -d
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: hubrium-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - mcp-network
+
+  mcp:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: hubrium-mcp-http-server
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=production
+      - PYTHONPATH=/app
+      - HTTP_HOST=0.0.0.0
+      - HTTP_PORT=8000
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
+    driver: bridge
+

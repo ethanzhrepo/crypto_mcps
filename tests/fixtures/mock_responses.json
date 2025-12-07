@@ -1,0 +1,130 @@
+{
+  "coingecko": {
+    "bitcoin": {
+      "id": "bitcoin",
+      "symbol": "btc",
+      "name": "Bitcoin",
+      "description": {
+        "en": "Bitcoin is a decentralized cryptocurrency originally described in a 2008 whitepaper by a person, or group of people, using the alias Satoshi Nakamoto."
+      },
+      "links": {
+        "homepage": ["https://bitcoin.org/"],
+        "blockchain_site": ["https://blockchain.info/"],
+        "official_forum_url": ["https://bitcointalk.org/"],
+        "subreddit_url": "https://www.reddit.com/r/Bitcoin/"
+      },
+      "market_data": {
+        "current_price": {"usd": 95000},
+        "market_cap": {"usd": 1850000000000},
+        "market_cap_rank": 1,
+        "fully_diluted_valuation": {"usd": 1995000000000},
+        "total_volume": {"usd": 45000000000},
+        "high_24h": {"usd": 96000},
+        "low_24h": {"usd": 94000},
+        "price_change_24h": 1000,
+        "price_change_percentage_24h": 1.06,
+        "circulating_supply": 19500000,
+        "total_supply": 21000000,
+        "max_supply": 21000000,
+        "ath": {"usd": 69000},
+        "atl": {"usd": 67.81}
+      },
+      "community_data": {
+        "twitter_followers": 5800000,
+        "reddit_subscribers": 5200000,
+        "telegram_channel_user_count": null
+      },
+      "developer_data": {
+        "forks": 34000,
+        "stars": 72000,
+        "subscribers": 4000,
+        "total_issues": 8000,
+        "closed_issues": 7500,
+        "commit_count_4_weeks": 127
+      }
+    }
+  },
+  "coinmarketcap": {
+    "bitcoin": {
+      "data": {
+        "BTC": {
+          "id": 1,
+          "name": "Bitcoin",
+          "symbol": "BTC",
+          "slug": "bitcoin",
+          "quote": {
+            "USD": {
+              "price": 95100,
+              "volume_24h": 46000000000,
+              "market_cap": 1855000000000,
+              "percent_change_1h": 0.15,
+              "percent_change_24h": 1.08,
+              "percent_change_7d": 3.5
+            }
+          },
+          "circulating_supply": 19500000,
+          "total_supply": 19500000,
+          "max_supply": 21000000
+        }
+      }
+    }
+  },
+  "etherscan": {
+    "token_holders": {
+      "status": "1",
+      "message": "OK",
+      "result": "10000"
+    },
+    "token_holder_list": {
+      "status": "1",
+      "message": "OK",
+      "result": [
+        {"TokenHolderAddress": "0x1234567890abcdef", "TokenHolderQuantity": "1000000000000000000000000"},
+        {"TokenHolderAddress": "0xabcdef1234567890", "TokenHolderQuantity": "500000000000000000000000"},
+        {"TokenHolderAddress": "0x9876543210fedcba", "TokenHolderQuantity": "250000000000000000000000"}
+      ]
+    },
+    "token_info": {
+      "status": "1",
+      "message": "OK",
+      "result": [
+        {
+          "contractAddress": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "tokenName": "USD Coin",
+          "symbol": "USDC",
+          "divisor": "6",
+          "tokenType": "ERC20",
+          "totalSupply": "45000000000000000",
+          "blueCheckmark": "true"
+        }
+      ]
+    }
+  },
+  "github": {
+    "repo": {
+      "id": 123456,
+      "name": "bitcoin",
+      "full_name": "bitcoin/bitcoin",
+      "owner": {"login": "bitcoin"},
+      "description": "Bitcoin Core integration/staging tree",
+      "stargazers_count": 72000,
+      "forks_count": 34000,
+      "open_issues_count": 500,
+      "watchers_count": 72000,
+      "created_at": "2010-12-19T15:16:43Z",
+      "updated_at": "2025-11-18T10:00:00Z",
+      "pushed_at": "2025-11-18T10:00:00Z"
+    },
+    "contributors": [
+      {"login": "laanwj", "contributions": 8000},
+      {"login": "fanquake", "contributions": 3500},
+      {"login": "sipa", "contributions": 3000}
+    ],
+    "commits": {
+      "total_count": 127,
+      "items": [
+        {"sha": "abc123", "commit": {"author": {"date": "2025-11-18T09:00:00Z"}}}
+      ]
+    }
+  }
+}

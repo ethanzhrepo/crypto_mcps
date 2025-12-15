@@ -162,10 +162,6 @@ data_source_configs:
 # Web Research / News Search 配置
 web_research:
   news_sources:
-    telegram_scraper:
-      enabled: true
-      top_n: 50
-
     bing_news:
       enabled: true
       top_n: 20
@@ -173,3 +169,6 @@ web_research:
     kaito:
       enabled: false
       top_n: 30
+
+# Telegram Search 配置（独立工具：telegram_search）
+# - Telegram Scraper 的基础连接配置见 data_source_configs.telegram_scraper

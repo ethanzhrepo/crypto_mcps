@@ -115,6 +115,8 @@ class TestMarketMicrostructureTool:
         assert result.data.orderbook.mid_price == 95000.0
         assert len(result.data.orderbook.bids) == 2
         assert len(result.data.orderbook.asks) == 2
+        # 深度参数默认应为 100（用于更可靠的订单簿/滑点分析）
+        tool.binance.get_orderbook.assert_awaited_with("BTCUSDT", 100)
 
     def test_symbol_normalization(self, tool):
         """测试交易对符号标准化"""

@@ -2,6 +2,7 @@
 MCP服务器主程序
 """
 import asyncio
+import os
 import signal
 import sys
 from typing import Any
@@ -14,6 +15,7 @@ from src.core.models import (
     CryptoOverviewInput,
     DerivativesHubInput,
     DrawChartInput,
+    GrokSocialTraceInput,
     MacroHubInput,
     MarketMicrostructureInput,
     OnchainActivityInput,
@@ -25,6 +27,7 @@ from src.core.models import (
     OnchainTVLFeesInput,
     OnchainTokenUnlocksInput,
     OnchainWhaleTransfersInput,
+    TelegramSearchInput,
     WebResearchInput,
 )
 from src.data_sources.binance import BinanceClient
@@ -45,6 +48,7 @@ from src.middleware.cache import cache_manager
 from src.tools.chart import DrawChartTool
 from src.tools.crypto.overview import crypto_overview_tool
 from src.tools.derivatives import DerivativesHubTool
+from src.tools.grok_social_trace import GrokSocialTraceTool
 from src.tools.macro import MacroHubTool
 from src.tools.market import MarketMicrostructureTool
 from src.tools.onchain.activity import OnchainActivityTool
@@ -56,6 +60,7 @@ from src.tools.onchain.stablecoins_cex import OnchainStablecoinsCEXTool
 from src.tools.onchain.token_unlocks import OnchainTokenUnlocksTool
 from src.tools.onchain.tvl_fees import OnchainTVLFeesTool
 from src.tools.onchain.whale_transfers import OnchainWhaleTransfersTool
+from src.tools.telegram_search import TelegramSearchTool
 from src.tools.web_research import WebResearchTool
 from src.utils.config import config
 from src.utils.logger import get_logger, setup_logging
@@ -72,8 +77,10 @@ class MCPServer:
         self.market_microstructure_tool = None
         self.derivatives_hub_tool = None
         self.web_research_tool = None
+        self.telegram_search_tool = None
         self.macro_hub_tool = None
         self.draw_chart_tool = None
+        self.grok_social_trace_tool = None
         # 链上工具（拆分自原 onchain_hub）
         self.onchain_tvl_fees_tool = None
         self.onchain_stablecoins_cex_tool = None
@@ -118,7 +125,6 @@ class MCPServer:
         try:
             telegram_scraper_client = TelegramScraperClient(
                 base_url=config.settings.telegram_scraper_url,
-                index_name=config.settings.telegram_scraper_index,
             )
             registry.register("telegram_scraper", telegram_scraper_client)
             logger.info(
@@ -149,7 +155,6 @@ class MCPServer:
             brave_api_key=brave_key,
             bing_api_key=bing_key,
             kaito_api_key=kaito_key,
-            telegram_scraper_client=telegram_scraper_client,
             news_source_config=news_source_config,
         )
         registry.register("search", search_client)
@@ -221,6 +226,9 @@ class MCPServer:
             deribit_client=deribit,
         )
         self.web_research_tool = WebResearchTool(search_client=search_client)
+        self.telegram_search_tool = TelegramSearchTool(
+            telegram_scraper_client=telegram_scraper_client
+        )
         self.macro_hub_tool = MacroHubTool(
             macro_client=macro_client,
             fred_client=fred_client,
@@ -228,6 +236,9 @@ class MCPServer:
             calendar_client=calendar_client,
         )
         self.draw_chart_tool = DrawChartTool(market_tool=self.market_microstructure_tool)
+        # Grok 社交媒体溯源工具（仅在配置启用时可被调用）
+        xai_api_key = os.getenv("XAI_API_KEY")
+        self.grok_social_trace_tool = GrokSocialTraceTool(api_key=xai_api_key)
 
         # 链上数据工具家族（拆分自原 onchain_hub）
         self.onchain_tvl_fees_tool = OnchainTVLFeesTool(defillama_client=defillama)
@@ -274,13 +285,16 @@ class MCPServer:
         """注册MCP工具"""
         logger.info("Registering MCP tools...")
 
-        # crypto_overview工具
         @self.server.list_tools()
         async def list_tools() -> list[dict]:
-            return [
-                {
-                    "name": "crypto_overview",
-                    "description": "One-shot comprehensive token overview: basic profile, market metrics, supply, holder concentration, social links, sector classification, and developer activity.",
+            tools: list[dict] = []
+
+            """
+            if config.is_tool_enabled("crypto_overview"):
+                tools.append(
+                    {
+                        "name": "crypto_overview",
+                        "description": "One-shot comprehensive token overview: basic profile, market metrics, supply, holder concentration, social links, sector classification, and developer activity.",
                     "input_schema": {
                         "type": "object",
                         "properties": {
@@ -312,10 +326,13 @@ class MCPServer:
                             }
                         },
                         "required": ["symbol"]
-                    }
-                },
-                {
-                    "name": "market_microstructure",
+                    },
+                )
+
+            if config.is_tool_enabled("market_microstructure"):
+                tools.append(
+                    {
+                        "name": "market_microstructure",
                     "description": "Real-time market microstructure data: ticker, klines, trades, orderbook depth, volume profile, taker flow, slippage estimation, and venue specifications.",
                     "input_schema": {
                         "type": "object",
@@ -366,9 +383,12 @@ class MCPServer:
                             }
                         },
                         "required": ["symbol"]
-                    }
-                },
-                {
+                    },
+                )
+
+            if config.is_tool_enabled("derivatives_hub"):
+                tools.append(
+                    {
                     "name": "derivatives_hub",
                     "description": "Derivatives data hub: funding rate, open interest, liquidations, long/short ratio, borrow rates, basis curve, term structure, options surface, and options metrics.",
                     "input_schema": {
@@ -398,9 +418,12 @@ class MCPServer:
                             }
                         },
                         "required": ["symbol"]
-                    }
-                },
-                {
+                    },
+                )
+
+            if config.is_tool_enabled("onchain_tvl_fees"):
+                tools.append(
+                    {
                     "name": "onchain_tvl_fees",
                     "description": "On-chain DeFi metrics: protocol TVL and fees/revenue from DefiLlama.",
                     "input_schema": {
@@ -471,9 +494,12 @@ class MCPServer:
                             }
                         },
                         "required": ["chain"]
-                    }
-                },
-                {
+                    },
+                )
+
+            if config.is_tool_enabled("onchain_contract_risk"):
+                tools.append(
+                    {
                     "name": "onchain_governance",
                     "description": "DAO governance proposals from Snapshot (off-chain) and Tally (on-chain).",
                     "input_schema": {
@@ -568,11 +594,14 @@ class MCPServer:
                             }
                         },
                         "required": ["contract_address", "chain"]
-                    }
-                },
-                {
-                    "name": "web_research_search",
-                    "description": "Multi-source web and news search: Telegram messages (Elasticsearch), Bing News, Brave Search, Kaito crypto news, and DuckDuckGo. Supports parallel search with configurable providers and result merging.",
+                    },
+                )
+
+            if config.is_tool_enabled("web_research_search"):
+                tools.append(
+                    {
+                        "name": "web_research_search",
+                    "description": "Multi-source web and news search: Bing News, Brave Search, Kaito crypto news, and DuckDuckGo. Supports parallel search with configurable providers and result merging.",
                     "input_schema": {
                         "type": "object",
                         "properties": {
@@ -586,7 +615,7 @@ class MCPServer:
                             "providers": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Specific providers to use (optional, e.g., ['telegram', 'bing_news', 'brave'])"
+                                "description": "Specific providers to use (optional, e.g., ['bing_news', 'kaito', 'brave'])"
                             },
                             "time_range": {
                                 "type": "string",
@@ -595,9 +624,12 @@ class MCPServer:
                             "limit": {"type": "integer", "default": 10, "description": "Maximum results to return"}
                         },
                         "required": ["query"]
-                    }
-                },
-                {
+                    },
+                )
+
+            if config.is_tool_enabled("macro_hub"):
+                tools.append(
+                    {
                     "name": "macro_hub",
                     "description": "Macro economic and market indicators: Fear & Greed Index, FRED data (CPI, unemployment, GDP, rates), traditional indices (S&P500, NASDAQ, VIX), commodities (gold, oil), economic calendar, and CME FedWatch tool.",
                     "input_schema": {
@@ -626,10 +658,13 @@ class MCPServer:
                             }
                         },
                         "required": []
-                    }
-                },
-                {
-                    "name": "draw_chart",
+                    },
+                )
+
+            if config.is_tool_enabled("draw_chart"):
+                tools.append(
+                    {
+                        "name": "draw_chart",
                     "description": "Accepts client-provided Plotly chart configs (candlestick, line, area, bar, heatmap, scatter) and returns normalized chart metadata without fetching any market data.",
                     "input_schema": {
                         "type": "object",
@@ -659,9 +694,120 @@ class MCPServer:
                             }
                         },
                         "required": ["chart_type", "symbol", "config"]
+                    },
+                )
+
+            if config.is_tool_enabled("grok_social_trace"):
+                tools.append(
+                    {
+                        "name": "grok_social_trace",
+                        "description": "Trace the origin of a circulating message on X/Twitter using Grok, assess whether it is likely promotional, and provide deepsearch-based social analysis.",
+                        "input_schema": GrokSocialTraceInput.model_json_schema(),
                     }
-                }
-            ]
+                )
+
+            """
+
+            # New simplified tool registry using Pydantic schemas and config switches
+
+            def add_tool(name: str, description: str, schema_model) -> None:
+                if not config.is_tool_enabled(name):
+                    return
+                tools.append(
+                    {
+                        "name": name,
+                        "description": description,
+                        "input_schema": schema_model.model_json_schema(),
+                    }
+                )
+
+            add_tool(
+                "crypto_overview",
+                "One-shot comprehensive token overview: basic profile, market metrics, supply, holder concentration, social links, sector classification, and developer activity.",
+                CryptoOverviewInput,
+            )
+            add_tool(
+                "market_microstructure",
+                "Real-time market microstructure data: ticker, klines, trades, orderbook depth, volume profile, taker flow, slippage estimation, and venue specifications.",
+                MarketMicrostructureInput,
+            )
+            add_tool(
+                "derivatives_hub",
+                "Derivatives data hub: funding rate, open interest, liquidations, long/short ratio, borrow rates, basis curve, term structure, options surface, and options metrics.",
+                DerivativesHubInput,
+            )
+            add_tool(
+                "onchain_tvl_fees",
+                "On-chain DeFi metrics: protocol TVL and fees/revenue from DefiLlama.",
+                OnchainTVLFeesInput,
+            )
+            add_tool(
+                "onchain_stablecoins_cex",
+                "Stablecoin metrics and centralized exchange reserves from DefiLlama.",
+                OnchainStablecoinsCEXInput,
+            )
+            add_tool(
+                "onchain_bridge_volumes",
+                "Cross-chain bridge volumes (24h/7d/30d) from DefiLlama.",
+                OnchainBridgeVolumesInput,
+            )
+            add_tool(
+                "onchain_dex_liquidity",
+                "Uniswap v3 DEX liquidity, pools, and optional tick distribution from The Graph.",
+                OnchainDEXLiquidityInput,
+            )
+            add_tool(
+                "onchain_governance",
+                "DAO governance proposals from Snapshot (off-chain) and Tally (on-chain).",
+                OnchainGovernanceInput,
+            )
+            add_tool(
+                "onchain_whale_transfers",
+                "Large on-chain transfers using Whale Alert API.",
+                OnchainWhaleTransfersInput,
+            )
+            add_tool(
+                "onchain_token_unlocks",
+                "Token vesting and unlock schedules from Token Unlocks.",
+                OnchainTokenUnlocksInput,
+            )
+            add_tool(
+                "onchain_activity",
+                "Chain-level activity metrics (active addresses, tx count, gas usage) from Etherscan.",
+                OnchainActivityInput,
+            )
+            add_tool(
+                "onchain_contract_risk",
+                "Smart contract risk analysis via GoPlus or Slither.",
+                OnchainContractRiskInput,
+            )
+            add_tool(
+                "telegram_search",
+                "Search Telegram messages (Elasticsearch-backed) via Telegram Scraper.",
+                TelegramSearchInput,
+            )
+            add_tool(
+                "web_research_search",
+                "Multi-source web and news search: Bing News, Brave Search, Kaito crypto news, and DuckDuckGo. Supports parallel search with configurable providers and result merging.",
+                WebResearchInput,
+            )
+            add_tool(
+                "macro_hub",
+                "Macro economic and market indicators: Fear & Greed Index, FRED data (CPI, unemployment, GDP, rates), traditional indices (S&P500, NASDAQ, VIX), commodities (gold, oil), economic calendar, and CME FedWatch tool.",
+                MacroHubInput,
+            )
+            add_tool(
+                "draw_chart",
+                "Accepts client-provided Plotly chart configs (candlestick, line, area, bar, heatmap, scatter) and returns normalized chart metadata without fetching any market data.",
+                DrawChartInput,
+            )
+            add_tool(
+                "grok_social_trace",
+                "Trace the origin of a circulating message on X/Twitter using Grok, assess whether it is likely promotional, and provide deepsearch-based social analysis.",
+                GrokSocialTraceInput,
+            )
+
+            return tools
 
         @self.server.call_tool()
         async def call_tool(name: str, arguments: dict) -> list[dict[str, Any]]:
@@ -700,6 +846,11 @@ class MCPServer:
                 elif name == "derivatives_hub":
                     input_params = DerivativesHubInput(**arguments)
                     result = await self.derivatives_hub_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "telegram_search":
+                    input_params = TelegramSearchInput(**arguments)
+                    result = await self.telegram_search_tool.execute(input_params)
                     return [{"type": "text", "text": result.model_dump_json(indent=2)}]
 
                 elif name == "web_research_search":
@@ -761,6 +912,24 @@ class MCPServer:
                     input_params = OnchainContractRiskInput(**arguments)
                     result = await self.onchain_contract_risk_tool.execute(input_params)
                     return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "grok_social_trace":
+                    if not config.is_tool_enabled("grok_social_trace"):
+                        return [
+                            {
+                                "type": "text",
+                                "text": "Tool grok_social_trace is disabled by configuration.",
+                            }
+                        ]
+
+                    input_params = GrokSocialTraceInput(**arguments)
+                    result = await self.grok_social_trace_tool.execute(input_params)
+                    return [
+                        {
+                            "type": "text",
+                            "text": result.model_dump_json(indent=2),
+                        }
+                    ]
 
                 else:
                     return [{"type": "text", "text": f"Unknown tool: {name}"}]

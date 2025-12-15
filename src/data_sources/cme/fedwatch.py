@@ -44,7 +44,7 @@ class CMEFedWatchClient(BaseDataSource):
             "Accept-Language": "en-US,en;q=0.5",
         }
 
-    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None) -> Any:
+    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None, headers: Optional[Dict[str, str]] = None) -> Any:
         """获取原始数据"""
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.get(

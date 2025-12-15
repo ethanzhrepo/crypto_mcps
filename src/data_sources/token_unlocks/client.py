@@ -43,9 +43,9 @@ class TokenUnlocksClient(BaseDataSource):
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
-    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None) -> Any:
+    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None, headers: Optional[Dict[str, str]] = None) -> Any:
         """获取原始数据"""
-        return await self._make_request("GET", endpoint, params, base_url_override)
+        return await self._make_request("GET", endpoint, params, base_url_override, headers)
 
     def transform(self, raw_data: Any, data_type: str) -> Any:
         """转换原始数据"""

@@ -20,6 +20,8 @@ pydantic = "^2.5.0"
 pydantic-settings = "^2.1.0"
 pandas = "^2.1.0"
 numpy = "^2.1.0"
+# 金融数据
+yfinance = "^0.2.66"
 # 缓存与存储
 redis = {extras = ["hiredis"], version = "^5.0.0"}
 # 配置管理
@@ -32,6 +34,8 @@ colorama = "^0.4.6"
 python-dateutil = "^2.8.2"
 # HTML解析
 beautifulsoup4 = "^4.12.0"
+# 浏览器自动化（用于Investing.com日历爬虫）
+playwright = "^1.40.0"
 # 可选：交易所统一接口
 ccxt = {version = "^4.2.0", optional = true}
 

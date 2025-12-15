@@ -81,7 +81,8 @@ class FREDClient(BaseDataSource):
         }
 
     async def fetch_raw(
-        self, endpoint: str, params: Optional[Dict] = None
+        self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None
     ) -> Any:
         """
         获取原始数据
@@ -89,6 +90,8 @@ class FREDClient(BaseDataSource):
         Args:
             endpoint: API端点
             params: 查询参数
+            base_url_override: 可选的基础URL覆盖
+            headers: 可选的请求头
 
         Returns:
             原始响应数据
@@ -100,7 +103,8 @@ class FREDClient(BaseDataSource):
         params["api_key"] = self.api_key
         params["file_type"] = "json"
 
-        return await self._make_request("GET", endpoint, params)
+        request_headers = headers or self._get_headers()
+        return await self._make_request("GET", endpoint, params, base_url_override, request_headers)
 
     def transform(self, raw_data: Any, data_type: str) -> Dict[str, Any]:
         """
@@ -217,6 +221,7 @@ class FREDClient(BaseDataSource):
         observation_end: Optional[str] = None,
         limit: int = 10000,
         sort_order: str = "desc",
+        units: str = "lin",  # 新增：transformation参数（lin/pc1/pch/chg等）
     ) -> tuple[Dict[str, Any], SourceMeta]:
         """
         获取序列观测数据
@@ -227,6 +232,7 @@ class FREDClient(BaseDataSource):
             observation_end: 结束日期（YYYY-MM-DD）
             limit: 最大返回数量
             sort_order: 排序（'asc' 或 'desc'）
+            units: transformation参数（lin=原始值, pc1=YoY年率, pch=百分比变化, chg=绝对变化）
 
         Returns:
             (观测数据, SourceMeta)
@@ -236,6 +242,7 @@ class FREDClient(BaseDataSource):
             "series_id": series_id,
             "limit": limit,
             "sort_order": sort_order,
+            "units": units,  # 传递transformation参数到FRED API
         }
 
         if observation_start:
@@ -254,13 +261,14 @@ class FREDClient(BaseDataSource):
         )
 
     async def get_latest_value(
-        self, series_id: str
+        self, series_id: str, units: str = "lin"
     ) -> tuple[Dict[str, Any], SourceMeta]:
         """
         获取序列最新值
 
         Args:
             series_id: 序列ID
+            units: transformation参数（lin/pc1/pch等）
 
         Returns:
             (最新观测, SourceMeta)
@@ -269,6 +277,7 @@ class FREDClient(BaseDataSource):
             series_id=series_id,
             limit=1,
             sort_order="desc",
+            units=units,  # 传递transformation参数
         )
 
         if data["observations"]:
@@ -277,12 +286,14 @@ class FREDClient(BaseDataSource):
                 "series_id": series_id,
                 "date": latest["date"],
                 "value": latest["value"],
+                "units": data.get("units"),  # 返回单位信息
             }, meta
         else:
             return {
                 "series_id": series_id,
                 "date": None,
                 "value": None,
+                "units": None,
             }, meta
 
     async def get_multiple_series(
@@ -410,6 +421,79 @@ class FREDClient(BaseDataSource):
         return {
             "tga": data.get(self.COMMON_SERIES["tga"]),
             "rrp": data.get(self.COMMON_SERIES["rrp"]),
+        }, meta
+
+    async def get_series_with_yoy(
+        self, series_id: str
+    ) -> tuple[Dict[str, Any], SourceMeta]:
+        """
+        同时获取原始值和YoY年率
+
+        Args:
+            series_id: FRED系列ID
+
+        Returns:
+            包含value和year_over_year_rate的数据字典
+        """
+        # 获取原始值
+        data_raw, meta = await self.get_latest_value(series_id, units="lin")
+
+        # 获取YoY
+        data_yoy, _ = await self.get_latest_value(series_id, units="pc1")
+
+        return {
+            "series_id": series_id,
+            "date": data_raw.get("date"),
+            "value": data_raw.get("value"),
+            "year_over_year_rate": data_yoy.get("value"),  # YoY年率
+            "units": data_raw.get("units"),
+        }, meta
+
+    async def get_series_with_change(
+        self, series_id: str, days: int = 1
+    ) -> tuple[Dict[str, Any], SourceMeta]:
+        """
+        获取序列值及其日涨跌
+
+        Args:
+            series_id: FRED系列ID
+            days: 回溯天数（1=日涨跌）
+
+        Returns:
+            包含value和change的数据字典
+        """
+        # 获取最新2个观测值
+        data, meta = await self.get_series_observations(
+            series_id=series_id,
+            limit=days + 1,
+            sort_order="desc",
+            units="lin",
+        )
+
+        observations = data.get("observations", [])
+        if len(observations) < 2:
+            return {
+                "series_id": series_id,
+                "date": observations[0]["date"] if observations else None,
+                "value": observations[0]["value"] if observations else None,
+                "change": 0.0,
+                "change_percent": 0.0,
+                "units": data.get("units"),
+            }, meta
+
+        current = observations[0]["value"]
+        previous = observations[1]["value"]
+
+        change = current - previous
+        change_percent = (change / previous * 100) if previous != 0 else 0.0
+
+        return {
+            "series_id": series_id,
+            "date": observations[0]["date"],
+            "value": current,
+            "change": change,
+            "change_percent": change_percent,
+            "units": data.get("units"),
         }, meta
 
     async def search_series(

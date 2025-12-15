@@ -66,7 +66,7 @@ class WebResearchTool:
             results, meta = await self._search_academic(params.query, params.limit, params.time_range)
             source_metas = [meta]
         elif params.scope == "news":
-            results, meta = await self._search_news(
+            results, meta, search_warnings = await self._search_news(
                 params.query,
                 params.limit,
                 params.providers,
@@ -74,6 +74,8 @@ class WebResearchTool:
                 params.time_range,
             )
             source_metas = [meta]
+            # 合并新闻源warnings
+            warnings.extend(search_warnings)
         else:
             results = []
             source_metas = []
@@ -186,13 +188,14 @@ class WebResearchTool:
         providers: Optional[List[str]] = None,
         start_time: Optional[datetime] = None,
         time_range: Optional[str] = None,
-    ) -> Tuple[List[SearchResult], SourceMeta]:
+    ) -> Tuple[List[SearchResult], SourceMeta, List[str]]:
         """执行新闻搜索（并行搜索所有配置的数据源）"""
         from src.core.source_meta import SourceMetaBuilder
 
-        # 使用并行搜索
-        data = await self.search_client.search_news_parallel(
+        # 使用并行搜索（解包结果和warnings）
+        data, search_warnings = await self.search_client.search_news_parallel(
             query=query,
+            providers=providers,
             time_range=time_range,
             start_time=start_time,
         )
@@ -211,7 +214,7 @@ class WebResearchTool:
             ttl_seconds=600,  # 新闻更新快，缓存10分钟
         )
 
-        return results, meta
+        return results, meta, search_warnings
 
     def _parse_time_range(self, time_range: Optional[str]) -> Optional[datetime]:
         if not time_range:

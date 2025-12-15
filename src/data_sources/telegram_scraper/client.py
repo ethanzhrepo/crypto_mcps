@@ -4,7 +4,7 @@ Telegram Scraper API客户端
 提供从Elasticsearch获取Telegram消息数据
 """
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import structlog
 
@@ -15,20 +15,18 @@ logger = structlog.get_logger()
 
 
 class TelegramScraperClient(BaseDataSource):
-    """Telegram Scraper客户端（通过Elasticsearch API）"""
+    """Telegram Scraper客户端（通过 tel2es FastAPI）"""
 
     def __init__(
         self,
         base_url: str = "http://localhost:8000",
-        index_name: str = "telegram_messages",
         timeout: float = 15.0,
     ):
         """
         初始化Telegram Scraper客户端
 
         Args:
-            base_url: Elasticsearch基础URL
-            index_name: 索引名称
+            base_url: tel2es FastAPI 服务 URL
             timeout: 请求超时时间（秒）
         """
         super().__init__(
@@ -37,11 +35,9 @@ class TelegramScraperClient(BaseDataSource):
             timeout=timeout,
             requires_api_key=False,
         )
-        self.index_name = index_name
         logger.info(
             "telegram_scraper_client_initialized",
             base_url=base_url,
-            index_name=index_name,
         )
 
     def _get_headers(self) -> Dict[str, str]:
@@ -56,12 +52,26 @@ class TelegramScraperClient(BaseDataSource):
         endpoint: str,
         params: Optional[Dict] = None,
         base_url_override: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
     ) -> Any:
         """获取原始数据"""
-        # 对于 POST 请求，params 作为 JSON body
         return await self._make_request(
-            "POST", endpoint, json_body=params, base_url_override=base_url_override
+            "GET",
+            endpoint,
+            params=params,
+            base_url_override=base_url_override,
+            headers=headers,
         )
+
+    @staticmethod
+    def _normalize_iso(dt: Optional[str]) -> Optional[str]:
+        if not dt:
+            return None
+        normalized = dt.strip()
+        if normalized.endswith("Z"):
+            # tel2es uses datetime.fromisoformat, which doesn't accept trailing "Z"
+            return normalized[:-1] + "+00:00"
+        return normalized
 
     async def search_messages(
         self,
@@ -70,7 +80,7 @@ class TelegramScraperClient(BaseDataSource):
         limit: int = 50,
         sort_by: str = "timestamp",
         start_time: Optional[str] = None,
-    ) -> Tuple[List[Dict], SourceMeta]:
+    ) -> tuple[list[dict], SourceMeta]:
         """
         搜索Telegram消息
 
@@ -83,69 +93,39 @@ class TelegramScraperClient(BaseDataSource):
         Returns:
             (消息列表, 元信息)
         """
-        endpoint = f"/{self.index_name}/_search"
-
-        # 构建查询
         query_term = keyword or symbol
-        if not query_term:
-            # 如果没有指定关键词，返回最新消息
-            search_query = {"match_all": {}}
-        else:
-            # 多字段搜索
-            search_query = {
-                "multi_match": {
-                    "query": query_term,
-                    "fields": ["text", "channel_title", "sender_name"],
-                }
+        start_time = self._normalize_iso(start_time)
+
+        # tel2es:
+        # - /search: requires keywords, sorts by score
+        # - /latest: returns newest messages
+        if query_term:
+            endpoint = "/search"
+            params = {
+                "keywords": query_term,
+                "start_time": start_time,
+                "limit": min(limit, 100),
+                "offset": 0,
             }
-
-        if start_time:
-            search_query = {
-                "bool": {
-                    "must": search_query,
-                    "filter": [
-                        {
-                            "range": {
-                                "timestamp": {
-                                    "gte": start_time,
-                                }
-                            }
-                        }
-                    ],
-                }
-            }
-
-        # 构建排序
-        if sort_by == "timestamp":
-            sort_config = [{"timestamp": {"order": "desc"}}]
+            data_type = "search"
         else:
-            # 按相关性和时间排序
-            sort_config = [
-                {"_score": {"order": "desc"}},
-                {"timestamp": {"order": "desc"}},
-            ]
+            endpoint = "/latest"
+            params = {
+                "start_time": start_time,
+                "limit": min(limit, 100),
+                "offset": 0,
+            }
+            data_type = "latest"
 
-        # 构建请求体
-        body = {
-            "query": search_query,
-            "size": limit,
-            "sort": sort_config,
-        }
-
-        logger.debug(
-            "telegram_search_query",
-            keyword=keyword,
-            symbol=symbol,
-            limit=limit,
-            query=search_query,
-        )
+        if sort_by not in {"timestamp", "score"}:
+            sort_by = "timestamp"
 
         # 执行搜索
         try:
             data, meta = await self.fetch(
                 endpoint=endpoint,
-                params=body,
-                data_type="messages",
+                params={k: v for k, v in params.items() if v is not None},
+                data_type=data_type,
                 ttl_seconds=60,  # 1分钟缓存
             )
             return data, meta
@@ -160,78 +140,51 @@ class TelegramScraperClient(BaseDataSource):
 
     def transform(self, raw_data: Any, data_type: str) -> Any:
         """转换原始数据为标准格式"""
-        if data_type == "messages":
-            return self._transform_messages(raw_data)
+        if data_type in {"search", "latest"}:
+            return self._transform_api_response(raw_data)
         return raw_data
 
-    def _transform_messages(self, data: Dict) -> List[Dict]:
-        """
-        转换Telegram消息数据为SearchResult格式
-
-        Args:
-            data: Elasticsearch返回的原始数据
-
-        Returns:
-            标准化的消息列表
-        """
-        if not isinstance(data, dict) or "hits" not in data:
-            logger.warning(
-                "invalid_telegram_response",
-                data_keys=list(data.keys()) if isinstance(data, dict) else None,
-            )
+    def _transform_api_response(self, data: Dict) -> List[Dict]:
+        if not isinstance(data, dict):
             return []
 
-        hits = data.get("hits", {}).get("hits", [])
-        results = []
+        hits = data.get("hits", [])
+        if not isinstance(hits, list):
+            return []
 
-        for hit in hits:
-            source = hit.get("_source", {})
+        results: List[Dict] = []
+        for item in hits:
+            if not isinstance(item, dict):
+                continue
 
-            # 提取消息内容
-            text = source.get("text", "")
-            channel_title = source.get("channel_title", "Unknown Channel")
-            sender_name = source.get("sender_name", "")
-            timestamp = source.get("timestamp", datetime.utcnow().isoformat())
-            message_id = source.get("message_id", hit.get("_id", ""))
-            channel_username = source.get("channel_username", "")
+            text = item.get("text", "") or ""
+            chat_title = item.get("chat_title") or "Unknown Chat"
+            timestamp = item.get("timestamp") or datetime.utcnow().isoformat()
 
-            # 构建消息URL（如果有channel_username）
-            url = ""
-            if channel_username:
-                url = f"https://t.me/{channel_username}/{message_id}"
-
-            # 构建标题（取前100字符）
             if len(text) > 100:
-                title = f"{channel_title}: {text[:100]}..."
+                title = f"{chat_title}: {text[:100]}..."
             else:
-                title = f"{channel_title}: {text}"
+                title = f"{chat_title}: {text}"
 
-            # 转换为标准格式
             results.append(
                 {
                     "title": title,
-                    "url": url,
+                    "url": "",
                     "snippet": text,
-                    "source": f"Telegram - {channel_title}",
-                    "published_at": timestamp,
-                    "relevance_score": hit.get("_score"),
-                    # 额外的Telegram特定字段
+                    "source": f"Telegram - {chat_title}",
+                    "published_at": timestamp if isinstance(timestamp, str) else str(timestamp),
+                    "relevance_score": item.get("score"),
                     "telegram_meta": {
-                        "message_id": message_id,
-                        "channel_username": channel_username,
-                        "sender_name": sender_name,
-                        "views": source.get("views", 0),
-                        "forwards": source.get("forwards", 0),
-                        "replies": source.get("replies", 0),
-                        "timestamp": timestamp,
+                        "message_id": item.get("message_id"),
+                        "chat_id": item.get("chat_id"),
+                        "chat_title": chat_title,
+                        "chat_type": item.get("chat_type"),
+                        "user_id": item.get("user_id"),
+                        "username": item.get("username"),
+                        "first_name": item.get("first_name"),
+                        "timestamp": timestamp if isinstance(timestamp, str) else str(timestamp),
                     },
                 }
             )
-
-        logger.info(
-            "telegram_messages_transformed",
-            total_hits=data.get("hits", {}).get("total", {}).get("value", 0),
-            returned=len(results),
-        )
 
         return results

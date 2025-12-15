@@ -115,7 +115,7 @@ class BaseDataSource(ABC):
         pass
 
     @abstractmethod
-    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None) -> Any:
+    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None, headers: Optional[Dict[str, str]] = None) -> Any:
         """
         获取原始数据（子类实现）
 
@@ -123,6 +123,7 @@ class BaseDataSource(ABC):
             endpoint: API端点路径
             params: 查询参数
             base_url_override: 可选的基础URL覆盖
+            headers: 可选的自定义请求头
 
         Returns:
             原始响应数据
@@ -153,6 +154,7 @@ class BaseDataSource(ABC):
         data_type: str = "default",
         ttl_seconds: int = 300,
         base_url_override: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
     ) -> tuple[Dict[str, Any], SourceMeta]:
         """
         获取并转换数据的完整流程
@@ -163,6 +165,7 @@ class BaseDataSource(ABC):
             data_type: 数据类型
             ttl_seconds: TTL秒数
             base_url_override: 可选的基础URL覆盖
+            headers: 可选的自定义请求头
 
         Returns:
             (转换后的数据, SourceMeta)
@@ -173,10 +176,10 @@ class BaseDataSource(ABC):
             # 使用断路器保护
             if self.circuit_breaker:
                 raw_data = await self.circuit_breaker.call(
-                    self._fetch_with_retry, endpoint, params, base_url_override
+                    self._fetch_with_retry, endpoint, params, base_url_override, headers
                 )
             else:
-                raw_data = await self._fetch_with_retry(endpoint, params, base_url_override)
+                raw_data = await self._fetch_with_retry(endpoint, params, base_url_override, headers)
 
             # 转换数据
             transformed_data = self.transform(raw_data, data_type)
@@ -226,7 +229,7 @@ class BaseDataSource(ABC):
         max_backoff=60.0,
     )
     async def _fetch_with_retry(
-        self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None
+        self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None, headers: Optional[Dict[str, str]] = None
     ) -> Any:
         """
         带重试的数据获取（内部方法）
@@ -235,6 +238,7 @@ class BaseDataSource(ABC):
             endpoint: API端点
             params: 查询参数
             base_url_override: 可选的基础URL覆盖
+            headers: 可选的自定义请求头
 
         Returns:
             原始数据
@@ -249,10 +253,16 @@ class BaseDataSource(ABC):
                     "Rate limit exceeded and could not acquire permit",
                 )
 
-        return await self.fetch_raw(endpoint, params, base_url_override)
+        return await self.fetch_raw(endpoint, params, base_url_override, headers)
 
     async def _make_request(
-        self, method: str, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None
+        self,
+        method: str,
+        endpoint: str,
+        params: Optional[Dict] = None,
+        base_url_override: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
+        json_body: Optional[Dict] = None,
     ) -> Any:
         """
         发起HTTP请求（通用方法）
@@ -260,8 +270,10 @@ class BaseDataSource(ABC):
         Args:
             method: HTTP方法（GET, POST等）
             endpoint: 端点路径
-            params: 查询参数
+            params: 查询参数（Query String）
             base_url_override: 可选的基础URL覆盖
+            headers: 可选的自定义请求头（会与默认请求头合并）
+            json_body: JSON 请求体（主要用于 POST/PUT）
 
         Returns:
             响应数据
@@ -276,10 +288,17 @@ class BaseDataSource(ABC):
             else:
                 url = endpoint
 
+            # 合并自定义headers（如果提供）
+            request_headers = None
+            if headers:
+                request_headers = headers
+
             response = await self.client.request(
                 method=method,
                 url=url,
                 params=params,
+                headers=request_headers,
+                json=json_body,
             )
 
             # 处理HTTP错误状态码

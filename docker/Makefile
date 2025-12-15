@@ -1,6 +1,6 @@
 # Hubrium MCP Server Test Makefile
 
-.PHONY: help start stop restart build test test-unit test-integration test-live test-live-free test-cov clean logs shell
+.PHONY: help start stop restart build build-prod clean clean-prod test test-unit test-integration test-live test-live-free test-cov clean logs shell
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -8,9 +8,11 @@ help: ## Show this help
 start: ## Start MCP HTTP server (production)
 	docker-compose -f docker-compose.yml up -d
 	@echo ""
-	@echo "✅ MCP HTTP Server started on http://localhost:8000"
-	@echo "   Health check: curl http://localhost:8000/health"
-	@echo "   Tools list:   curl http://localhost:8000/tools"
+	@echo "✅ MCP HTTP Server started on http://localhost:8001"
+	@echo "   Health check: curl http://localhost:8001/health"
+	@echo "   Tools list:   curl http://localhost:8001/tools"
+	@echo "   Tool registry: curl http://localhost:8001/tools/registry"
+	@echo "   Tool detail:  curl http://localhost:8001/tools/{tool_name}"
 	@echo "   Logs:         make logs"
 	@echo "   Stop:         make stop"
 
@@ -23,6 +25,9 @@ restart: ## Restart MCP HTTP server
 
 build: ## Build test containers
 	docker-compose -f docker-compose.test.yml build --no-cache
+
+build-prod: ## Build production containers
+	docker-compose -f docker-compose.yml build --no-cache
 
 test: ## Run all tests
 	./run-tests.sh
@@ -58,8 +63,14 @@ clean: ## Remove test containers and volumes
 	docker-compose -f docker-compose.test.yml down -v --remove-orphans
 	rm -rf reports/*
 
+clean-prod: ## Remove production containers and volumes
+	docker-compose -f docker-compose.yml down -v --remove-orphans
+
 logs: ## Show test container logs
 	docker-compose -f docker-compose.test.yml logs -f
+
+logs-prod:
+	docker-compose -f docker-compose.yml logs -f
 
 shell: ## Open shell in test container
 	docker-compose -f docker-compose.test.yml run --rm mcp-test /bin/bash

@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     # 合约风险分析提供商配置
     contract_risk_provider: str = Field(default="goplus", alias="CONTRACT_RISK_PROVIDER")
 
+    # XAI (Grok) API密钥
+    xai_api_key: Optional[str] = Field(default=None, alias="XAI_API_KEY")
+
     # 限流配置
     max_concurrent_requests: int = Field(default=20, alias="MAX_CONCURRENT_REQUESTS")
     rate_limit_coingecko: int = Field(default=50, alias="RATE_LIMIT_COINGECKO")
@@ -111,6 +114,7 @@ class ConfigManager:
         self.config_dir = config_dir
         self._ttl_policies: Optional[Dict] = None
         self._data_sources: Optional[Dict] = None
+        self._tools: Optional[Dict] = None
         self._settings: Optional[Settings] = None
 
     @property
@@ -133,6 +137,38 @@ class ConfigManager:
         if self._data_sources is None:
             self._data_sources = self._load_yaml("data_sources.yaml")
         return self._data_sources
+
+    @property
+    def tools(self) -> Dict[str, Any]:
+        """
+        获取 MCP 工具开关配置。
+
+        配置文件位于 config/tools.yaml，格式示例：
+
+        crypto_overview:
+          enabled: true
+        """
+        if self._tools is None:
+            try:
+                self._tools = self._load_yaml("tools.yaml")
+            except ConfigurationError:
+                # 如果未提供 tools.yaml，则默认所有工具启用
+                self._tools = {}
+        return self._tools
+
+    def is_tool_enabled(self, tool_name: str) -> bool:
+        """
+        判断指定 MCP 工具是否启用。
+
+        工具配置格式：
+        <tool_name>:
+          enabled: true/false
+
+        如果 tools.yaml 不存在，或未配置指定工具，则默认启用。
+        """
+        tool_cfg = self.tools.get(tool_name, {})
+        # 未配置时默认启用
+        return bool(tool_cfg.get("enabled", True))
 
     def _load_yaml(self, filename: str) -> Dict[str, Any]:
         """加载YAML配置文件"""
@@ -227,6 +263,8 @@ class ConfigManager:
             "goplus": self.settings.goplus_api_key,
             "goplus_secret": self.settings.goplus_api_secret,
             "tally": self.settings.tally_api_key,
+            # XAI (Grok)
+            "xai": self.settings.xai_api_key,
         }
         return key_mapping.get(provider.lower())
 

@@ -51,7 +51,7 @@ class EtherscanClient(BaseDataSource):
             "User-Agent": "Mozilla/5.0",
         }
 
-    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None) -> Any:
+    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None, headers: Optional[Dict[str, str]] = None) -> Any:
         """
         获取原始数据
 
@@ -214,43 +214,153 @@ class EtherscanClient(BaseDataSource):
         Returns:
             (链上活动数据, SourceMeta)
         """
-        # 获取每日交易数
-        tx_params = {
+        from datetime import timedelta
+
+        today = datetime.utcnow().date()
+        week_ago = today - timedelta(days=7)
+
+        # 1. 获取24小时交易数
+        tx_24h_params = {
             "module": "stats",
             "action": "dailytx",
-            "startdate": (datetime.utcnow().date()).isoformat(),
-            "enddate": (datetime.utcnow().date()).isoformat(),
+            "startdate": today.isoformat(),
+            "enddate": today.isoformat(),
             "sort": "desc",
         }
 
-        # 获取平均Gas价格
-        gas_params = {
+        # 2. 获取7天交易数
+        tx_7d_params = {
+            "module": "stats",
+            "action": "dailytx",
+            "startdate": week_ago.isoformat(),
+            "enddate": today.isoformat(),
+            "sort": "desc",
+        }
+
+        # 3. 获取24小时活跃地址数
+        addr_24h_params = {
+            "module": "stats",
+            "action": "dailyaddress",
+            "startdate": today.isoformat(),
+            "enddate": today.isoformat(),
+            "sort": "desc",
+        }
+
+        # 4. 获取7天活跃地址数
+        addr_7d_params = {
+            "module": "stats",
+            "action": "dailyaddress",
+            "startdate": week_ago.isoformat(),
+            "enddate": today.isoformat(),
+            "sort": "desc",
+        }
+
+        # 5. 获取24小时新地址数
+        new_addr_params = {
+            "module": "stats",
+            "action": "dailynewaddress",
+            "startdate": today.isoformat(),
+            "enddate": today.isoformat(),
+            "sort": "desc",
+        }
+
+        # 6. 获取24小时Gas消耗
+        gas_used_params = {
+            "module": "stats",
+            "action": "dailygasused",
+            "startdate": today.isoformat(),
+            "enddate": today.isoformat(),
+            "sort": "desc",
+        }
+
+        # 7. 获取平均Gas价格
+        gas_price_params = {
             "module": "gastracker",
             "action": "gasoracle",
         }
 
-        # 获取交易数
-        tx_data = await self.fetch_raw("", tx_params)
-        gas_data = await self.fetch_raw("", gas_params)
+        # 并行获取所有数据
+        try:
+            import asyncio
+            tx_24h_data, tx_7d_data, addr_24h_data, addr_7d_data, new_addr_data, gas_used_data, gas_price_data = await asyncio.gather(
+                self.fetch_raw("", tx_24h_params),
+                self.fetch_raw("", tx_7d_params),
+                self.fetch_raw("", addr_24h_params),
+                self.fetch_raw("", addr_7d_params),
+                self.fetch_raw("", new_addr_params),
+                self.fetch_raw("", gas_used_params),
+                self.fetch_raw("", gas_price_params),
+                return_exceptions=True,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to fetch some chain stats: {e}")
+            # 如果并行获取失败，逐个获取
+            tx_24h_data = await self.fetch_raw("", tx_24h_params)
+            tx_7d_data = await self.fetch_raw("", tx_7d_params)
+            addr_24h_data = await self.fetch_raw("", addr_24h_params)
+            addr_7d_data = await self.fetch_raw("", addr_7d_params)
+            new_addr_data = await self.fetch_raw("", new_addr_params)
+            gas_used_data = await self.fetch_raw("", gas_used_params)
+            gas_price_data = await self.fetch_raw("", gas_price_params)
 
-        # 解析交易数据
-        tx_count_24h = 0
-        if tx_data.get("status") == "1":
-            result = tx_data.get("result", [])
-            if result:
-                tx_count_24h = int(result[0].get("transactioncount", 0)) if isinstance(result, list) else 0
+        # 解析24小时交易数
+        tx_count_24h = None
+        if not isinstance(tx_24h_data, Exception) and tx_24h_data.get("status") == "1":
+            result = tx_24h_data.get("result", [])
+            if result and isinstance(result, list):
+                tx_count_24h = int(result[0].get("transactioncount", 0))
 
-        # 解析Gas数据
-        avg_gas_price = None
-        if gas_data.get("status") == "1":
-            result = gas_data.get("result", {})
+        # 解析7天交易数总和
+        tx_count_7d = None
+        if not isinstance(tx_7d_data, Exception) and tx_7d_data.get("status") == "1":
+            result = tx_7d_data.get("result", [])
+            if result and isinstance(result, list):
+                tx_count_7d = sum(int(day.get("transactioncount", 0)) for day in result)
+
+        # 解析24小时活跃地址数
+        active_addresses_24h = None
+        if not isinstance(addr_24h_data, Exception) and addr_24h_data.get("status") == "1":
+            result = addr_24h_data.get("result", [])
+            if result and isinstance(result, list):
+                active_addresses_24h = int(result[0].get("uniqueaddresses", 0))
+
+        # 解析7天活跃地址数总和
+        active_addresses_7d = None
+        if not isinstance(addr_7d_data, Exception) and addr_7d_data.get("status") == "1":
+            result = addr_7d_data.get("result", [])
+            if result and isinstance(result, list):
+                active_addresses_7d = sum(int(day.get("uniqueaddresses", 0)) for day in result)
+
+        # 解析24小时新地址数
+        new_addresses_24h = None
+        if not isinstance(new_addr_data, Exception) and new_addr_data.get("status") == "1":
+            result = new_addr_data.get("result", [])
+            if result and isinstance(result, list):
+                new_addresses_24h = int(result[0].get("newaddress", 0))
+
+        # 解析24小时Gas消耗
+        gas_used_24h = None
+        if not isinstance(gas_used_data, Exception) and gas_used_data.get("status") == "1":
+            result = gas_used_data.get("result", [])
+            if result and isinstance(result, list):
+                gas_used_24h = float(result[0].get("gasused", 0))
+
+        # 解析平均Gas价格
+        avg_gas_price_gwei = None
+        if not isinstance(gas_price_data, Exception) and gas_price_data.get("status") == "1":
+            result = gas_price_data.get("result", {})
             if isinstance(result, dict):
-                avg_gas_price = float(result.get("ProposeGasPrice", 0))
+                avg_gas_price_gwei = float(result.get("ProposeGasPrice", 0))
 
         activity = OnchainActivity(
             chain=self.chain,
+            active_addresses_24h=active_addresses_24h,
+            active_addresses_7d=active_addresses_7d,
             transaction_count_24h=tx_count_24h,
-            avg_gas_price_gwei=avg_gas_price,
+            transaction_count_7d=tx_count_7d,
+            gas_used_24h=gas_used_24h,
+            avg_gas_price_gwei=avg_gas_price_gwei,
+            new_addresses_24h=new_addresses_24h,
             timestamp=datetime.utcnow().isoformat() + "Z",
         )
 

@@ -2,10 +2,10 @@
 核心数据模型 - Pydantic定义
 """
 from datetime import datetime
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ==================== 枚举类型 ====================
@@ -27,6 +27,45 @@ class ConflictResolutionStrategy(str, Enum):
     AVERAGE = "average"  # 取平均值
     LATEST_TIMESTAMP = "latest_timestamp"  # 最新时间戳优先
     MANUAL = "manual"  # 需人工判断
+
+
+# Tool argument enums (exposed via /tools/registry input_schema)
+class CryptoOverviewIncludeField(StrEnum):
+    ALL = "all"
+    BASIC = "basic"
+    MARKET = "market"
+    SUPPLY = "supply"
+    HOLDERS = "holders"
+    SOCIAL = "social"
+    SECTOR = "sector"
+    DEV_ACTIVITY = "dev_activity"
+
+
+class MarketMicrostructureIncludeField(StrEnum):
+    TICKER = "ticker"
+    KLINES = "klines"
+    TRADES = "trades"
+    ORDERBOOK = "orderbook"
+    AGGREGATED_ORDERBOOK = "aggregated_orderbook"
+    VOLUME_PROFILE = "volume_profile"
+    TAKER_FLOW = "taker_flow"
+    SLIPPAGE = "slippage"
+    VENUE_SPECS = "venue_specs"
+    SECTOR_STATS = "sector_stats"
+    ALL = "all"
+
+
+class DerivativesHubIncludeField(StrEnum):
+    FUNDING_RATE = "funding_rate"
+    OPEN_INTEREST = "open_interest"
+    LIQUIDATIONS = "liquidations"
+    LONG_SHORT_RATIO = "long_short_ratio"
+    BASIS_CURVE = "basis_curve"
+    TERM_STRUCTURE = "term_structure"
+    OPTIONS_SURFACE = "options_surface"
+    OPTIONS_METRICS = "options_metrics"
+    BORROW_RATES = "borrow_rates"
+    ALL = "all"
 
 
 # ==================== 基础模型 ====================
@@ -96,8 +135,8 @@ class CryptoOverviewInput(BaseModel):
         default=None, description="链名称，如 ethereum, bsc, arbitrum"
     )
     vs_currency: str = Field(default="usd", description="计价货币")
-    include_fields: List[str] = Field(
-        default=["all"],
+    include_fields: List[CryptoOverviewIncludeField] = Field(
+        default=[CryptoOverviewIncludeField.ALL],
         description="包含的字段: basic, market, supply, holders, social, sector, dev_activity, all",
     )
 
@@ -106,25 +145,6 @@ class CryptoOverviewInput(BaseModel):
     def symbol_uppercase(cls, v: str) -> str:
         """符号转大写"""
         return v.upper()
-
-    @field_validator("include_fields")
-    @classmethod
-    def validate_include_fields(cls, v: List[str]) -> List[str]:
-        """验证字段列表"""
-        valid_fields = {
-            "all",
-            "basic",
-            "market",
-            "supply",
-            "holders",
-            "social",
-            "sector",
-            "dev_activity",
-        }
-        for field in v:
-            if field not in valid_fields:
-                raise ValueError(f"Invalid field: {field}. Must be one of {valid_fields}")
-        return v
 
 
 class BasicInfo(BaseModel):
@@ -275,8 +295,8 @@ class MarketMicrostructureInput(BaseModel):
         default=["binance"],
         description="交易所列表，如 ['binance', 'okx']。支持多场所聚合",
     )
-    include_fields: List[str] = Field(
-        default=["ticker", "orderbook"],
+    include_fields: List[MarketMicrostructureIncludeField] = Field(
+        default=[MarketMicrostructureIncludeField.TICKER, MarketMicrostructureIncludeField.ORDERBOOK],
         description="返回字段: ticker, klines, trades, orderbook, aggregated_orderbook, "
         "volume_profile, taker_flow, slippage, venue_specs, sector_stats",
     )
@@ -284,7 +304,10 @@ class MarketMicrostructureInput(BaseModel):
         default="1h", description="K线周期: 1m, 5m, 15m, 1h, 4h, 1d"
     )
     kline_limit: int = Field(default=100, description="K线数量")
-    orderbook_depth: int = Field(default=20, description="订单簿深度")
+    orderbook_depth: int = Field(
+        default=100,
+        description="订单簿深度（建议>=100；过小会导致深度/滑点等分析失真）",
+    )
     trades_limit: int = Field(default=100, description="成交记录数量")
     slippage_size_usd: float = Field(
         default=10000, description="滑点估算的订单大小(USD)"
@@ -503,8 +526,8 @@ class DerivativesHubInput(BaseModel):
     """derivatives_hub输入参数"""
 
     symbol: str = Field(..., description="交易对符号，如 BTC/USDT, ETH/USDT")
-    include_fields: List[str] = Field(
-        default=["funding_rate", "open_interest"],
+    include_fields: List[DerivativesHubIncludeField] = Field(
+        default=[DerivativesHubIncludeField.FUNDING_RATE, DerivativesHubIncludeField.OPEN_INTEREST],
         description="返回字段: funding_rate, open_interest, liquidations, "
         "long_short_ratio, basis_curve, term_structure, options_surface, "
         "options_metrics, borrow_rates",
@@ -1222,11 +1245,11 @@ class WebResearchInput(BaseModel):
     query: str = Field(..., description="搜索关键词")
     scope: str = Field(
         default="web",
-        description="搜索范围: web (综合搜索), academic (学术论文), news (新闻资讯)"
+        description="搜索范围: web (综合搜索), academic (学术论文), news (新闻资讯)",
     )
     providers: Optional[List[str]] = Field(
         default=None,
-        description="搜索提供商列表: brave, duckduckgo, google, bing, serpapi, kaito。默认自动选择可用的提供商",
+        description="搜索提供商列表：web 范围支持 brave, duckduckgo, google, bing, serpapi, kaito；news 范围支持 bing_news/bing, kaito。默认自动选择可用的提供商",
     )
     time_range: Optional[str] = Field(
         default=None,
@@ -1237,6 +1260,8 @@ class WebResearchInput(BaseModel):
 
 class SearchResult(BaseModel):
     """搜索结果"""
+
+    model_config = ConfigDict(extra='allow')
 
     title: str
     url: str
@@ -1255,6 +1280,145 @@ class WebResearchOutput(BaseModel):
     source_meta: List[SourceMeta] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
     as_of_utc: str
+
+    @field_validator("as_of_utc", mode="before")
+    @classmethod
+    def format_timestamp(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat() + "Z"
+        return v
+
+
+# ==================== telegram_search 工具模型 ====================
+
+
+class TelegramSearchInput(BaseModel):
+    """telegram_search 输入参数"""
+
+    query: Optional[str] = Field(default=None, description="搜索关键词（可选）")
+    symbol: Optional[str] = Field(default=None, description="币种符号（可选），如 BTC、ETH")
+    limit: int = Field(default=20, description="结果数量")
+    sort_by: str = Field(
+        default="timestamp",
+        description="排序字段：timestamp（最新优先）或 score（相关性优先）",
+    )
+    time_range: Optional[str] = Field(
+        default=None,
+        description="时间范围过滤: past_24h/day, past_week/7d, past_month/30d, past_year 等",
+    )
+    start_time: Optional[str] = Field(
+        default=None,
+        description="起始时间（ISO格式，优先级高于 time_range），如 2025-01-01T00:00:00Z",
+    )
+
+    @field_validator("symbol")
+    @classmethod
+    def symbol_uppercase(cls, v: Optional[str]) -> Optional[str]:
+        return v.upper() if isinstance(v, str) and v else v
+
+    @field_validator("sort_by")
+    @classmethod
+    def validate_sort_by(cls, v: str) -> str:
+        v = (v or "").strip().lower()
+        if v not in {"timestamp", "score"}:
+            raise ValueError("sort_by must be 'timestamp' or 'score'")
+        return v
+
+
+class TelegramSearchOutput(BaseModel):
+    """telegram_search 输出"""
+
+    query: Optional[str] = None
+    symbol: Optional[str] = None
+    results: List[SearchResult]
+    total_results: int
+    source_meta: List[SourceMeta] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    as_of_utc: str
+
+    @field_validator("as_of_utc", mode="before")
+    @classmethod
+    def format_timestamp(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat() + "Z"
+        return v
+
+
+# ==================== grok_social_trace 工具模型 ====================
+
+
+class GrokSocialTraceInput(BaseModel):
+    """
+    grok_social_trace 输入参数
+
+    由上游 LLM 提供一个简洁的关键提示词，用于在 X/Twitter 上进行溯源搜索。
+    """
+
+    keyword_prompt: str = Field(
+        ...,
+        description="来自 LLM 的关键提示词，用于在 X/Twitter 上进行溯源与 deepsearch 分析",
+    )
+    language: Optional[str] = Field(
+        default="auto",
+        description="优先使用的语言，例如 zh、en；auto 表示由 Grok 自动判断",
+    )
+
+
+class GrokOriginAccount(BaseModel):
+    """消息最初来源账号信息"""
+
+    handle: Optional[str] = Field(default=None, description="账号 @handle")
+    display_name: Optional[str] = Field(default=None, description="显示名称")
+    user_id: Optional[str] = Field(default=None, description="内部 user id，如有")
+    profile_url: Optional[str] = Field(default=None, description="账号主页 URL")
+    first_post_url: Optional[str] = Field(default=None, description="溯源到的最早帖子链接")
+    first_post_timestamp: Optional[str] = Field(
+        default=None, description="最早帖子时间戳，ISO8601"
+    )
+    followers_count: Optional[int] = Field(
+        default=None, description="粉丝数（如能从 Grok 中解析）"
+    )
+    is_verified: Optional[bool] = Field(
+        default=None, description="是否为认证账号（如能从 Grok 中解析）"
+    )
+
+
+class GrokSocialTraceOutput(BaseModel):
+    """
+    grok_social_trace 输出
+
+    - origin_account: 溯源到的最初来源账号
+    - is_likely_promotion: 是否疑似推广信息
+    - deepsearch_insights: 基于社交媒体 deepsearch 的解读
+    """
+
+    origin_account: Optional[GrokOriginAccount] = Field(
+        default=None, description="消息最初来源账号信息（如 Grok 无法确定则为 None）"
+    )
+    is_likely_promotion: bool = Field(
+        default=False, description="该消息是否可能为推广/营销信息"
+    )
+    promotion_confidence: Optional[float] = Field(
+        default=None, description="推广判断置信度，0-1 之间"
+    )
+    promotion_rationale: Optional[str] = Field(
+        default=None, description="为什么认为是/不是推广信息的理由"
+    )
+    deepsearch_insights: str = Field(
+        ...,
+        description="基于 Grok 对 X/Twitter 全局数据的 deepsearch 分析，对该消息的含义、传播路径、相关讨论等进行解读",
+    )
+    evidence_posts: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="用于支持结论的代表性帖子/引用列表（由 Grok 生成的结构化信息，如 tweet_url、author_handle、summary 等）",
+    )
+    raw_model_response: Optional[str] = Field(
+        default=None, description="Grok 的原始文本响应，便于调试和人工审阅"
+    )
+    as_of_utc: str = Field(
+        ...,
+        description="本次溯源和 deepsearch 的时间点（UTC ISO8601）",
+    )
 
     @field_validator("as_of_utc", mode="before")
     @classmethod
@@ -1298,8 +1462,18 @@ class IndexData(BaseModel):
 
     name: str
     value: float
-    change_24h: float
-    change_percent: float
+    change_24h: float = 0.0             # 改为可选，默认0
+    change_percent: float = 0.0          # 改为可选，默认0
+
+    # 新增字段（用于FRED宏观指标增强）
+    symbol: Optional[str] = None         # FRED系列ID或股票代码
+    date: Optional[str] = None           # 数据实际日期（YYYY-MM-DD）
+    year_over_year_rate: Optional[float] = None  # YoY年率（百分比）
+    units: Optional[str] = None          # 数据单位
+
+    # 兼容字段（用于YFinance）
+    timestamp: Optional[str] = None      # ISO时间戳
+    change_percent_24h: Optional[float] = None  # YFinance使用的字段名
 
 
 class FearGreedIndex(BaseModel):
@@ -1337,7 +1511,7 @@ class MacroCalendar(BaseModel):
 class MacroHubData(BaseModel):
     """macro_hub完整数据"""
 
-    fed: Optional[FEDData] = None
+    fed: Optional[List[IndexData]] = None
     indices: Optional[List[IndexData]] = None
     crypto_indices: Optional[List[IndexData]] = None
     fear_greed: Optional[FearGreedIndex] = None

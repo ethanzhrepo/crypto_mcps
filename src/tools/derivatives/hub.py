@@ -540,23 +540,14 @@ class DerivativesHubTool:
                 volume_24h=0,
             ))
 
-        # 2. TODO: 添加季度合约数据
+        # 2. 添加季度合约数据
         # Binance交割合约格式: BTCUSDT_250328 (2025年3月28日到期)
-        # 需要实现以下功能:
-        # - 从Binance获取所有可用的交割合约列表
-        # - 获取每个合约的价格、未平仓量、成交量
-        # - 解析到期日并计算天数
-        # - 计算隐含收益率: (future_price/spot_price - 1) * (365/days_to_expiry)
-        #
-        # 示例代码框架:
-        # quarterly_contracts = await self._get_delivery_contracts(symbol)
-        # for contract in quarterly_contracts:
-        #     contract_symbol = contract["symbol"]  # e.g., BTCUSDT_250328
-        #     expiry_date = self._parse_expiry_date(contract_symbol)
-        #     days_to_expiry = (expiry_date - current_time).days
-        #     contract_price = await self._get_contract_price(contract_symbol)
-        #     implied_yield = (contract_price/spot_price - 1) * (365/days_to_expiry)
-        #     points.append(TermStructurePoint(...))
+        try:
+            delivery_points = await self._fetch_delivery_contracts_term_structure(symbol, spot_price, current_time)
+            points.extend(delivery_points)
+        except Exception as e:
+            logger.warning(f"Failed to fetch delivery contracts for term structure: {e}")
+            # 即使交割合约获取失败，仍然返回永续合约数据
 
         # 判断曲线形态
         slope = "flat"
@@ -578,6 +569,131 @@ class DerivativesHubTool:
         )
 
         return term_structure, meta
+
+    async def _fetch_delivery_contracts_term_structure(
+        self, symbol: str, spot_price: float, current_time: datetime
+    ) -> List["TermStructurePoint"]:
+        """
+        获取交割合约的期限结构数据
+
+        Args:
+            symbol: 基础交易对 (如 BTCUSDT)
+            spot_price: 现货价格
+            current_time: 当前时间
+
+        Returns:
+            List[TermStructurePoint]: 交割合约的期限结构点列表
+        """
+        from src.core.models import TermStructurePoint
+        from datetime import datetime
+
+        points: List[TermStructurePoint] = []
+
+        # 获取交割合约的交易所信息（包含所有可用合约）
+        try:
+            exchange_info, _ = await self.binance.get_exchange_info(None, market="delivery")
+        except Exception as e:
+            logger.warning(f"Failed to get delivery exchange info: {e}")
+            return points
+
+        # 提取与基础交易对相关的交割合约
+        base_symbol = symbol.replace("USDT", "").replace("BUSD", "")
+        delivery_symbols = []
+
+        if "symbols" in exchange_info:
+            for contract in exchange_info["symbols"]:
+                contract_symbol = contract.get("symbol", "")
+                # 匹配格式: BTCUSDT_250328, BTCUSD_250328
+                if contract_symbol.startswith(base_symbol) and "_" in contract_symbol:
+                    # 检查合约状态
+                    if contract.get("status") == "TRADING":
+                        delivery_symbols.append(contract_symbol)
+                        # 限制最多获取4个合约（当前季度、下季度、下下季度、年度）
+                        if len(delivery_symbols) >= 4:
+                            break
+
+        # 如果没有找到交割合约，尝试更简单的匹配
+        if not delivery_symbols:
+            # 构造常见的交割合约符号
+            # 格式: BTCUSDT_YYMMDD
+            base_contracts = [
+                f"{symbol}_",  # BTCUSDT_
+            ]
+            if "symbols" in exchange_info:
+                for contract in exchange_info["symbols"]:
+                    contract_symbol = contract.get("symbol", "")
+                    for base in base_contracts:
+                        if contract_symbol.startswith(base) and contract.get("status") == "TRADING":
+                            delivery_symbols.append(contract_symbol)
+                            if len(delivery_symbols) >= 4:
+                                break
+                    if len(delivery_symbols) >= 4:
+                        break
+
+        # 并行获取所有交割合约的价格数据
+        import asyncio
+        if delivery_symbols:
+            tasks = [
+                self.binance.get_ticker(delivery_symbol, market="delivery")
+                for delivery_symbol in delivery_symbols
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for delivery_symbol, result in zip(delivery_symbols, results):
+                if isinstance(result, Exception):
+                    logger.warning(f"Failed to get ticker for {delivery_symbol}: {result}")
+                    continue
+
+                ticker_data, _ = result
+
+                # 解析到期日
+                try:
+                    # 从符号中提取日期部分 BTCUSDT_250328 -> 250328
+                    date_part = delivery_symbol.split("_")[-1]
+                    # 解析为 YY-MM-DD
+                    year = int("20" + date_part[:2])
+                    month = int(date_part[2:4])
+                    day = int(date_part[4:6])
+                    expiry_date = datetime(year, month, day)
+
+                    # 计算到期天数
+                    days_to_expiry = (expiry_date - current_time).days
+
+                    # 跳过已过期或即将过期的合约
+                    if days_to_expiry <= 0:
+                        continue
+
+                    # 获取合约价格
+                    contract_price = float(ticker_data.get("lastPrice", 0))
+                    if contract_price <= 0 or spot_price <= 0:
+                        continue
+
+                    # 计算隐含收益率（年化）
+                    # implied_yield = (future_price/spot_price - 1) * (365/days_to_expiry)
+                    price_ratio = contract_price / spot_price - 1
+                    implied_yield = price_ratio * (365.0 / days_to_expiry)
+
+                    # 获取未平仓量和成交量
+                    volume_24h = float(ticker_data.get("volume", 0))
+                    # 注意：这里的 volume 是24h成交量，OI需要单独获取
+                    # 为简化实现，暂时将OI设为0
+
+                    points.append(TermStructurePoint(
+                        expiry_date=expiry_date.strftime("%Y-%m-%d"),
+                        days_to_expiry=days_to_expiry,
+                        implied_yield=implied_yield,
+                        open_interest=0,  # TODO: 获取真实OI
+                        volume_24h=volume_24h,
+                    ))
+
+                except Exception as e:
+                    logger.warning(f"Failed to parse delivery contract {delivery_symbol}: {e}")
+                    continue
+
+        # 按到期天数排序
+        points.sort(key=lambda p: p.days_to_expiry)
+
+        return points
 
     # ==================== 计算方法 ====================
 

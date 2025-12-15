@@ -124,9 +124,9 @@ class GoPlusClient(BaseDataSource):
         if self.api_key and self.api_secret:
             await self._get_access_token()
 
-    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None) -> Any:
+    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None, headers: Optional[Dict[str, str]] = None) -> Any:
         """获取原始数据"""
-        return await self._make_request("GET", endpoint, params, base_url_override)
+        return await self._make_request("GET", endpoint, params, base_url_override, headers)
 
     def transform(self, raw_data: Any, data_type: str) -> Any:
         """转换原始数据"""

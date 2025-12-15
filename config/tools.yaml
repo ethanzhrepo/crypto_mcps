@@ -1,0 +1,55 @@
+# MCP 工具启用配置
+#
+# - 默认所有工具启用（如果未在此文件中显式配置）
+# - 仅在此文件中将 enabled 设为 false 时才会禁用对应工具
+#
+crypto_overview:
+  enabled: true
+
+market_microstructure:
+  enabled: true
+
+derivatives_hub:
+  enabled: true
+
+web_research_search:
+  enabled: true
+
+macro_hub:
+  enabled: true
+
+draw_chart:
+  enabled: true
+
+onchain_tvl_fees:
+  enabled: true
+
+onchain_stablecoins_cex:
+  enabled: true
+
+onchain_bridge_volumes:
+  enabled: true
+
+onchain_dex_liquidity:
+  enabled: true
+
+onchain_governance:
+  enabled: true
+
+onchain_whale_transfers:
+  enabled: true
+
+onchain_token_unlocks:
+  enabled: true
+
+onchain_activity:
+  enabled: true
+
+onchain_contract_risk:
+  enabled: true
+
+# 新增：Grok 社交媒体溯源工具
+# 默认禁用，需要时手动改为 true
+grok_social_trace:
+  enabled: false
+

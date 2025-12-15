@@ -8,20 +8,16 @@
 - Bing Search API (需要API key)
 - SerpAPI (聚合搜索API，需要API key)
 - Kaito (加密货币搜索，需要API key)
-- Telegram Scraper (本地Telegram消息数据)
 """
 import asyncio
 from datetime import datetime
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple
 import urllib.parse
 
 import structlog
 
 from src.core.models import SourceMeta
 from src.data_sources.base import BaseDataSource
-
-if TYPE_CHECKING:
-    from src.data_sources.telegram_scraper import TelegramScraperClient
 
 logger = structlog.get_logger()
 
@@ -44,7 +40,6 @@ class SearchClient(BaseDataSource):
         bing_api_key: Optional[str] = None,
         serpapi_key: Optional[str] = None,
         kaito_api_key: Optional[str] = None,
-        telegram_scraper_client: Optional["TelegramScraperClient"] = None,
         news_source_config: Optional[Dict[str, Dict]] = None,
     ):
         """
@@ -57,7 +52,6 @@ class SearchClient(BaseDataSource):
             bing_api_key: Bing Search API密钥（可选）
             serpapi_key: SerpAPI密钥（可选）
             kaito_api_key: Kaito API密钥（可选）
-            telegram_scraper_client: Telegram Scraper客户端（可选）
             news_source_config: 新闻源配置字典（可选）
         """
         super().__init__(
@@ -72,11 +66,9 @@ class SearchClient(BaseDataSource):
         self.bing_api_key = bing_api_key
         self.serpapi_key = serpapi_key
         self.kaito_api_key = kaito_api_key
-        self.telegram_scraper_client = telegram_scraper_client
 
         # 新闻源默认配置
         self.news_source_config = news_source_config or {
-            "telegram_scraper": {"enabled": True, "top_n": 50},
             "bing_news": {"enabled": True, "top_n": 20},
             "kaito": {"enabled": False, "top_n": 30},
         }
@@ -88,9 +80,9 @@ class SearchClient(BaseDataSource):
             "User-Agent": "Mozilla/5.0 (compatible; HubriumMCP/1.0)",
         }
 
-    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None) -> Any:
+    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None, headers: Optional[Dict[str, str]] = None) -> Any:
         """获取原始数据"""
-        return await self._make_request("GET", endpoint, params, base_url_override)
+        return await self._make_request("GET", endpoint, params, base_url_override, headers)
 
     async def search_web(
         self, query: str, limit: int = 10, provider: str = "auto"
@@ -301,36 +293,86 @@ class SearchClient(BaseDataSource):
         return raw_data
 
     def _transform_duckduckgo(self, data: Dict) -> List[Dict]:
-        """转换DuckDuckGo结果"""
+        """转换DuckDuckGo结果（改进版，更健壮的处理）"""
         results = []
 
         # DuckDuckGo Instant Answer主要返回单个答案，不是搜索结果列表
-        # 这里我们提取RelatedTopics作为结果
-        if "RelatedTopics" in data:
-            for topic in data["RelatedTopics"][:10]:
-                if isinstance(topic, dict) and "Text" in topic:
-                    results.append(
-                        {
-                            "title": topic.get("Text", "")[:100],  # 截取前100字符作为标题
-                            "url": topic.get("FirstURL", ""),
-                            "snippet": topic.get("Text", ""),
-                            "source": "DuckDuckGo",
-                            "relevance_score": None,
-                        }
-                    )
-
-        # 如果有Abstract，作为第一个结果
+        # 1. 优先处理 Abstract（最相关的答案）
         if data.get("Abstract"):
-            results.insert(
-                0,
+            results.append(
                 {
-                    "title": data.get("Heading", "Answer"),
+                    "title": data.get("Heading", "DuckDuckGo Answer"),
                     "url": data.get("AbstractURL", ""),
                     "snippet": data.get("Abstract", ""),
                     "source": data.get("AbstractSource", "DuckDuckGo"),
                     "relevance_score": 1.0,
-                },
+                }
             )
+
+        # 2. 提取RelatedTopics作为相关结果
+        if "RelatedTopics" in data and isinstance(data["RelatedTopics"], list):
+            for topic in data["RelatedTopics"][:10]:
+                # RelatedTopics 可能包含分组（有 "Topics" 键）或直接的主题
+                if isinstance(topic, dict):
+                    if "Topics" in topic and isinstance(topic["Topics"], list):
+                        # 处理分组的主题
+                        for subtopic in topic["Topics"][:5]:
+                            if isinstance(subtopic, dict) and subtopic.get("Text"):
+                                results.append(
+                                    {
+                                        "title": subtopic.get("Text", "")[:100],
+                                        "url": subtopic.get("FirstURL", ""),
+                                        "snippet": subtopic.get("Text", ""),
+                                        "source": "DuckDuckGo",
+                                        "relevance_score": 0.8,
+                                    }
+                                )
+                    elif topic.get("Text"):
+                        # 直接的主题
+                        results.append(
+                            {
+                                "title": topic.get("Text", "")[:100],
+                                "url": topic.get("FirstURL", ""),
+                                "snippet": topic.get("Text", ""),
+                                "source": "DuckDuckGo",
+                                "relevance_score": 0.9,
+                            }
+                        )
+
+        # 3. 如果还没有结果，检查 Definition
+        if not results and data.get("Definition"):
+            results.append(
+                {
+                    "title": data.get("Heading", "Definition"),
+                    "url": data.get("DefinitionURL", ""),
+                    "snippet": data.get("Definition", ""),
+                    "source": data.get("DefinitionSource", "DuckDuckGo"),
+                    "relevance_score": 0.9,
+                }
+            )
+
+        # 4. 如果还没有结果，检查 Answer
+        if not results and data.get("Answer"):
+            results.append(
+                {
+                    "title": "Quick Answer",
+                    "url": "",
+                    "snippet": data.get("Answer", ""),
+                    "source": "DuckDuckGo",
+                    "relevance_score": 0.8,
+                }
+            )
+
+        # 5. 记录空结果情况（用于调试）
+        if not results:
+            logger.warning(
+                "DuckDuckGo returned no usable results",
+                available_fields=list(data.keys()),
+                has_redirect=bool(data.get("Redirect")),
+            )
+            # 检查是否是重定向
+            if data.get("Redirect"):
+                logger.info(f"DuckDuckGo suggests redirect to: {data.get('Redirect')}")
 
         return results
 
@@ -440,49 +482,59 @@ class SearchClient(BaseDataSource):
     async def search_news_parallel(
         self,
         query: str,
+        providers: Optional[List[str]] = None,
         time_range: Optional[str] = None,
         start_time: Optional[datetime] = None,
-    ) -> List[Dict]:
+    ) -> Tuple[List[Dict], List[str]]:
         """
         并行搜索所有配置的新闻数据源，合并结果
 
         Args:
             query: 搜索查询
+            providers: 新闻提供商（可选），支持：bing_news/bing, kaito
             time_range: 时间范围（可选）
 
         Returns:
-            合并后的搜索结果列表
+            合并后的搜索结果列表和警告信息
         """
         tasks = []
+        warnings = []
+        source_names = []
 
-        # Telegram Scraper
-        if (
-            self.news_source_config.get("telegram_scraper", {}).get("enabled", False)
-            and self.telegram_scraper_client
-        ):
-            top_n = self.news_source_config["telegram_scraper"].get("top_n", 50)
-            tasks.append(self._search_telegram_safe(query, top_n, start_time))
+        provider_set = None
+        if providers:
+            provider_set = {p.lower().strip() for p in providers if isinstance(p, str)}
+
+        def _provider_enabled(provider_name: str) -> bool:
+            if not provider_set:
+                return True
+            if provider_name == "bing_news":
+                return "bing_news" in provider_set or "bing" in provider_set
+            return provider_name in provider_set
 
         # Bing News
-        if (
-            self.news_source_config.get("bing_news", {}).get("enabled", False)
-            and self.bing_api_key
-        ):
-            top_n = self.news_source_config["bing_news"].get("top_n", 20)
-            tasks.append(self._search_bing_news_safe(query, top_n, time_range))
+        if _provider_enabled("bing_news") and self.news_source_config.get("bing_news", {}).get("enabled", False):
+            if self.bing_api_key:
+                top_n = self.news_source_config["bing_news"].get("top_n", 20)
+                tasks.append(self._search_bing_news_safe(query, top_n, time_range))
+                source_names.append("Bing")
+            else:
+                warnings.append("Bing News需要BING_SEARCH_API_KEY")
 
         # Kaito
-        if (
-            self.news_source_config.get("kaito", {}).get("enabled", False)
-            and self.kaito_api_key
-        ):
-            top_n = self.news_source_config["kaito"].get("top_n", 30)
-            tasks.append(self._search_kaito_safe(query, top_n))
+        if _provider_enabled("kaito") and self.news_source_config.get("kaito", {}).get("enabled", False):
+            if self.kaito_api_key:
+                top_n = self.news_source_config["kaito"].get("top_n", 30)
+                tasks.append(self._search_kaito_safe(query, top_n))
+                source_names.append("Kaito")
+            else:
+                warnings.append("Kaito需要KAITO_API_KEY")
 
         # 并行执行所有搜索
         if not tasks:
             logger.warning("no_news_sources_enabled", query=query)
-            return []
+            warnings.append("没有可用的新闻数据源（Bing News/Kaito均未配置）")
+            return [], warnings
 
         logger.info(
             "parallel_news_search_start",
@@ -494,11 +546,11 @@ class SearchClient(BaseDataSource):
 
         # 合并结果
         all_results = []
-        for results in results_list:
+        for i, results in enumerate(results_list):
+            source_name = source_names[i] if i < len(source_names) else f"Source{i}"
             if isinstance(results, Exception):
-                logger.warning(
-                    "news_search_source_failed", error=str(results)
-                )
+                logger.warning("news_search_source_failed", source=source_name, error=str(results))
+                warnings.append(f"{source_name}搜索失败: {str(results)}")
                 continue
             if isinstance(results, list):
                 all_results.extend(results)
@@ -509,28 +561,7 @@ class SearchClient(BaseDataSource):
             total_results=len(all_results),
         )
 
-        return all_results
-
-    async def _search_telegram_safe(self, query: str, limit: int, start_time: Optional[datetime]) -> List[Dict]:
-        """安全的 Telegram 搜索（捕获异常）"""
-        try:
-            if not self.telegram_scraper_client:
-                return []
-
-            start_iso = None
-            if start_time:
-                start_iso = start_time.replace(microsecond=0).isoformat() + "Z"
-
-            data, _ = await self.telegram_scraper_client.search_messages(
-                keyword=query,
-                limit=limit,
-                start_time=start_iso,
-            )
-            logger.info("telegram_search_success", count=len(data))
-            return data
-        except Exception as e:
-            logger.warning(f"telegram_search_failed: {e}")
-            return []
+        return all_results, warnings
 
     async def _search_bing_news_safe(self, query: str, limit: int, time_range: Optional[str] = None) -> List[Dict]:
         """安全的 Bing News 搜索（捕获异常）"""

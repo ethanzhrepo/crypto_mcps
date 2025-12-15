@@ -13,6 +13,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from src.core.models import SourceMeta
+from src.core.source_meta import SourceMetaBuilder
 from src.data_sources.base import BaseDataSource
 
 
@@ -21,14 +22,16 @@ class InvestingCalendarClient(BaseDataSource):
 
     BASE_URL = "https://www.investing.com"
 
-    def __init__(self):
+    def __init__(self, redis_client: Optional[Any] = None):
         """初始化Investing.com日历客户端（无需API key）"""
         super().__init__(
             name="investing_calendar",
             base_url=self.BASE_URL,
-            timeout=15.0,
+            timeout=30.0,  # 增加timeout以适应浏览器
             requires_api_key=False,
         )
+        # Redis缓存客户端（可选）
+        self.redis_client = redis_client
 
     def _get_headers(self) -> Dict[str, str]:
         """获取请求头（模拟浏览器）"""
@@ -42,28 +45,80 @@ class InvestingCalendarClient(BaseDataSource):
         }
 
     async def fetch_raw(
-        self, endpoint: str, params: Optional[Dict] = None
+        self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None
     ) -> Any:
         """
-        获取原始HTML数据
+        使用Playwright无头浏览器获取HTML（处理JavaScript渲染）
 
         Args:
             endpoint: 路径
             params: 查询参数
+            base_url_override: 可选的基础URL覆盖
 
         Returns:
-            HTML内容
+            渲染后的HTML内容
         """
-        url = f"{self.base_url}{endpoint}"
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(
-                url,
-                params=params,
-                headers=self._get_headers(),
-                follow_redirects=True,
+        from playwright.async_api import async_playwright
+        from src.utils.logger import get_logger
+
+        logger = get_logger(__name__)
+
+        base = base_url_override or self.base_url
+        url = f"{base}{endpoint}"
+
+        # 添加查询参数到URL
+        if params:
+            from urllib.parse import urlencode
+            url = f"{url}?{urlencode(params)}"
+
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=['--no-sandbox', '--disable-dev-shm-usage']  # Docker友好
+                )
+
+                page = await browser.new_page()
+
+                # 设置User-Agent
+                await page.set_extra_http_headers(self._get_headers())
+
+                # 导航到页面 - 使用domcontentloaded而非networkidle（更快，避免timeout）
+                await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+
+                # 等待经济日历表格加载
+                await page.wait_for_selector(
+                    "table#economicCalendarData, table.genTbl",
+                    timeout=10000,
+                )
+
+                # 等待事件行加载（关键：等待JavaScript渲染完成）
+                await page.wait_for_selector(
+                    "tr.js-event-item, tr[data-event-datetime]",
+                    timeout=8000,
+                    state="attached"
+                )
+
+                # 获取渲染后的HTML
+                html = await page.content()
+
+                await browser.close()
+
+                logger.info(
+                    "calendar_fetched_with_playwright",
+                    url=url,
+                    html_length=len(html),
+                )
+
+                return html
+
+        except Exception as e:
+            logger.error(
+                "playwright_fetch_failed",
+                url=url,
+                error=str(e),
             )
-            response.raise_for_status()
-            return response.text
+            raise
 
     def transform(self, raw_data: Any, data_type: str) -> Dict[str, Any]:
         """
@@ -90,6 +145,9 @@ class InvestingCalendarClient(BaseDataSource):
         Returns:
             结构化事件列表
         """
+        from src.utils.logger import get_logger
+        logger = get_logger(__name__)
+
         soup = BeautifulSoup(html, "html.parser")
         events = []
 
@@ -101,17 +159,32 @@ class InvestingCalendarClient(BaseDataSource):
             # 尝试其他可能的选择器
             calendar_table = soup.find("table", {"class": "genTbl"})
 
-        if calendar_table:
-            rows = calendar_table.find_all("tr", {"class": "js-event-item"})
+        if not calendar_table:
+            logger.warning("calendar_table_not_found", html_length=len(html))
+            return {
+                "events": [],
+                "count": 0,
+                "parsed_at": datetime.utcnow().isoformat() + "Z",
+                "error": "Calendar table not found"
+            }
 
-            for row in rows:
-                try:
-                    event = self._parse_event_row(row)
-                    if event:
-                        events.append(event)
-                except Exception as e:
-                    # 跳过解析失败的行
-                    continue
+        # 尝试多种选择器模式
+        rows = calendar_table.find_all("tr", {"class": "js-event-item"})
+        if not rows:
+            # 尝试备用选择器
+            rows = calendar_table.find_all("tr", {"data-event-datetime": True})
+
+        logger.info("calendar_rows_found", row_count=len(rows))
+
+        for row in rows:
+            try:
+                event = self._parse_event_row(row)
+                if event:
+                    events.append(event)
+            except Exception as e:
+                # 跳过解析失败的行
+                logger.warning("event_parse_failed", error=str(e))
+                continue
 
         return {
             "events": events,
@@ -129,6 +202,9 @@ class InvestingCalendarClient(BaseDataSource):
         Returns:
             事件字典
         """
+        from src.utils.logger import get_logger
+        logger = get_logger(__name__)
+
         try:
             # 时间
             time_cell = row.find("td", {"class": "time"})
@@ -152,6 +228,22 @@ class InvestingCalendarClient(BaseDataSource):
             # 事件名称
             event_cell = row.find("td", {"class": "event"})
             event_name = event_cell.text.strip() if event_cell else ""
+
+            # 如果event_cell存在但name为空，记录详细信息
+            if event_cell and not event_name:
+                logger.warning(
+                    "event_cell_empty",
+                    html=str(event_cell)[:200],
+                    all_classes=row.get("class", []),
+                )
+            elif not event_cell:
+                # event_cell不存在 - 记录行的结构
+                all_td_classes = [td.get("class", []) for td in row.find_all("td")[:5]]
+                logger.warning(
+                    "event_cell_not_found",
+                    row_classes=row.get("class", []),
+                    td_classes=all_td_classes,
+                )
 
             # 实际值
             actual_cell = row.find("td", {"class": "act"})
@@ -183,14 +275,76 @@ class InvestingCalendarClient(BaseDataSource):
 
             return None
 
-        except Exception:
+        except Exception as e:
+            logger.warning("event_row_parse_exception", error=str(e))
             return None
+
+    async def _get_cached_or_fetch(
+        self, cache_key: str, fetch_func, ttl_seconds: int = 21600
+    ) -> Any:
+        """
+        尝试从缓存获取，失败则调用fetch函数
+
+        Args:
+            cache_key: Redis缓存键
+            fetch_func: 异步fetch函数
+            ttl_seconds: 缓存TTL（默认6小时）
+
+        Returns:
+            缓存或新获取的数据
+        """
+        from src.utils.logger import get_logger
+        logger = get_logger(__name__)
+
+        # 尝试从Redis获取
+        if self.redis_client:
+            try:
+                cached = await self.redis_client.get(cache_key)
+                if cached:
+                    logger.info(
+                        "calendar_cache_hit",
+                        cache_key=cache_key,
+                    )
+                    import json
+                    return json.loads(cached)
+            except Exception as e:
+                logger.warning(
+                    "calendar_cache_read_failed",
+                    cache_key=cache_key,
+                    error=str(e),
+                )
+
+        # 缓存未命中或失败，执行fetch
+        data = await fetch_func()
+
+        # 保存到Redis
+        if self.redis_client:
+            try:
+                import json
+                await self.redis_client.setex(
+                    cache_key,
+                    ttl_seconds,
+                    json.dumps(data),
+                )
+                logger.info(
+                    "calendar_cache_set",
+                    cache_key=cache_key,
+                    ttl_seconds=ttl_seconds,
+                )
+            except Exception as e:
+                logger.warning(
+                    "calendar_cache_write_failed",
+                    cache_key=cache_key,
+                    error=str(e),
+                )
+
+        return data
 
     async def get_economic_calendar(
         self, date: Optional[str] = None, importance: Optional[int] = None
     ) -> tuple[Dict[str, Any], SourceMeta]:
         """
-        获取经济日历
+        获取经济日历（带缓存）
 
         Args:
             date: 日期 (YYYY-MM-DD格式，默认今天)
@@ -199,34 +353,53 @@ class InvestingCalendarClient(BaseDataSource):
         Returns:
             (日历数据, SourceMeta)
         """
-        # 构建URL参数
-        params = {}
-        if date:
-            # Investing.com使用特定的日期参数格式
-            # 格式化为 timeFrom=YYYY/MM/DD&timeTo=YYYY/MM/DD
-            params["timeFrom"] = date.replace("-", "/")
-            params["timeTo"] = date.replace("-", "/")
+        # 构建缓存键
+        cache_date = date or datetime.utcnow().strftime("%Y-%m-%d")
+        cache_key = f"calendar:{cache_date}:{importance or 0}"
 
-        # 重要性过滤（URL参数）
-        if importance:
-            # importance=3 表示只显示高重要性
-            params["importance"] = importance
+        # 定义fetch函数
+        async def fetch_calendar():
+            # 构建URL参数
+            params = {}
+            if date:
+                params["timeFrom"] = date.replace("-", "/")
+                params["timeTo"] = date.replace("-", "/")
 
-        endpoint = "/economic-calendar/"
+            if importance:
+                params["importance"] = importance
 
-        raw_html, meta = await self.fetch(
-            endpoint=endpoint,
-            params=params,
-            data_type="calendar",
-            ttl_seconds=600,  # 10分钟缓存
+            endpoint = "/economic-calendar/"
+
+            raw_html, meta = await self.fetch(
+                endpoint=endpoint,
+                params=params,
+                data_type="calendar",
+                ttl_seconds=21600,  # 6小时TTL
+            )
+
+            # 客户端过滤（如需）
+            if importance and raw_html.get("events"):
+                raw_html["events"] = [
+                    e for e in raw_html["events"] if e.get("importance", 0) >= importance
+                ]
+                raw_html["count"] = len(raw_html["events"])
+
+            return raw_html
+
+        # 使用缓存
+        raw_html = await self._get_cached_or_fetch(
+            cache_key=cache_key,
+            fetch_func=fetch_calendar,
+            ttl_seconds=21600,  # 6小时
         )
 
-        # 如果需要importance过滤，在客户端再过滤一次
-        if importance and raw_html.get("events"):
-            raw_html["events"] = [
-                e for e in raw_html["events"] if e.get("importance", 0) >= importance
-            ]
-            raw_html["count"] = len(raw_html["events"])
+        # meta仍然新生成（反映查询时间）
+        from src.core.source_meta import SourceMetaBuilder
+        meta = SourceMetaBuilder.build(
+            provider="investing_calendar",
+            endpoint="/economic-calendar/",
+            ttl_seconds=21600,
+        )
 
         return raw_html, meta
 
@@ -268,12 +441,10 @@ class InvestingCalendarClient(BaseDataSource):
                 # 单日查询失败不影响其他日期
                 continue
 
-        return all_events, meta or SourceMeta(
+        return all_events, meta or SourceMetaBuilder.build(
             provider="investing_calendar",
             endpoint="/economic-calendar/",
-            fetched_at=datetime.utcnow().isoformat() + "Z",
             ttl_seconds=600,
-            cache_hit=False,
         )
 
     async def get_central_bank_events(

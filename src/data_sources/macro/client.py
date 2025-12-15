@@ -34,9 +34,9 @@ class MacroDataClient(BaseDataSource):
             "accept": "application/json",
         }
 
-    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None) -> Any:
+    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None, headers: Optional[Dict[str, str]] = None) -> Any:
         """获取原始数据"""
-        return await self._make_request("GET", endpoint, params, base_url_override)
+        return await self._make_request("GET", endpoint, params, base_url_override, headers)
 
     async def get_fear_greed_index(
         self, limit: int = 1

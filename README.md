@@ -11,6 +11,7 @@ A unified MCP server for crypto finance and macroeconomic data, providing 7 core
 - `market_microstructure` - Market data & microstructure analysis
 - `derivatives_hub` - Unified derivatives data access
 - `web_research_search` - Web & research search (news, reports, parallel multi-source queries)
+- `grok_social_trace` - X/Twitter social media origin tracing via Grok (origin account, promotion likelihood, deepsearch-based interpretation)
 - `macro_hub` - Macro indicators, Fed data, indices & dashboards
 - `draw_chart` - Chart visualization (Plotly-based)
 
@@ -78,9 +79,9 @@ cd docker
 make start
 
 # Server will be available at:
-# - MCP HTTP: http://localhost:8000
-# - Health: http://localhost:8000/health
-# - Tools: http://localhost:8000/tools
+# - MCP HTTP: http://localhost:8001
+# - Health: http://localhost:8001/health
+# - Tools: http://localhost:8001/tools
 ```
 
 **Other Commands:**
@@ -94,11 +95,44 @@ make logs      # View server logs
 
 ```bash
 # Check health
-curl http://localhost:8000/health
+curl http://localhost:8001/health
 
-# List available tools
-curl http://localhost:8000/tools
+# List available tools (lightweight)
+curl http://localhost:8001/tools
+
+# Get executable tool registry (schemas, examples, capabilities, freshness)
+curl http://localhost:8001/tools/registry
+
+# Get a single tool definition (GET). Use POST on the same path to execute the tool.
+curl http://localhost:8001/tools/crypto_overview
 ```
+
+## 🔌 HTTP Tool Registry APIs
+
+The HTTP server exposes dynamic tool metadata for LLM/agent orchestration.
+All registry endpoints only return tools that are **enabled by `config/tools.yaml`**.
+
+### `GET /tools/registry`
+
+Returns an executable registry for all enabled tools, including:
+- `input_schema`: JSON Schema from Pydantic input model.
+- `output_schema`: JSON Schema from Pydantic output model.
+- `examples`: canonical calls and argument patterns.
+- `capabilities`: semantic tags for planning.
+- `freshness`: TTL hints and `as_of_utc` semantics.
+- `limitations` / `cost_hints`: provider/key/latency notes.
+
+### `GET /tools/{name}`
+
+Returns a single tool registry entry.  
+Example:
+```bash
+curl http://localhost:8001/tools/derivatives_hub
+```
+
+### `GET /tools`
+
+Lightweight list for discovery (`name/description/endpoint` only).
 
 ## 🧪 Testing
 
@@ -175,8 +209,32 @@ Defines field-level cache TTL policies for each tool.
 ### config/data_sources.yaml
 Defines data source priorities, fallback chains, and conflict thresholds.
 
+### config/tools.yaml
+Defines per-tool enable/disable switches for the MCP server.
+
+- Format:
+  ```yaml
+  crypto_overview:
+    enabled: true
+  market_microstructure:
+    enabled: true
+  # ...
+  grok_social_trace:
+    enabled: false
+  ```
+- If `config/tools.yaml` is missing or a tool is not listed, that tool is treated as **enabled by default**.
+- The new `grok_social_trace` tool is **disabled by default** and must be explicitly enabled by setting:
+  ```yaml
+  grok_social_trace:
+    enabled: true
+  ```
+
 ### docker/.env
 Environment variables and API key configuration.
+
+- For the `grok_social_trace` tool, you must configure the XAI API key:
+  - Set `XAI_API_KEY=...` in your environment or `docker/.env` file
+  - Both stdio and HTTP servers use this environment variable
 
 ## 🔧 Tool Usage Example
 
@@ -224,8 +282,8 @@ See LICENSE file for details.
 ## 🐳 Docker Services
 
 **Production Environment:**
-- MCP HTTP Server: `http://localhost:8000`
-- Redis: `localhost:6379`
+- MCP HTTP Server: `http://localhost:8001`
+- Redis: `localhost:6380`
 
 **Test Environment:**
 - Separate isolated containers for testing

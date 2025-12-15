@@ -118,6 +118,19 @@ class MarketMicrostructureTool:
         conflicts = []
         warnings = []
 
+        # 订单簿深度用于微观结构/滑点分析时，过小（例如 10/20）不具备分析价值。
+        # 为保证分析质量，强制提升到至少 100 档。
+        orderbook_depth = params.orderbook_depth
+        needs_orderbook = (
+            "all" in params.include_fields
+            or "orderbook" in params.include_fields
+            or "aggregated_orderbook" in params.include_fields
+            or "slippage" in params.include_fields
+        )
+        if needs_orderbook and orderbook_depth < 100:
+            warnings.append(f"orderbook_depth too small ({orderbook_depth}); increased to 100 for analysis quality")
+            orderbook_depth = 100
+
         # 根据include_fields获取数据
         if "all" in params.include_fields or "ticker" in params.include_fields:
             ticker, meta = await self._fetch_ticker(symbol, primary_venue)
@@ -140,10 +153,21 @@ class MarketMicrostructureTool:
 
         if "all" in params.include_fields or "orderbook" in params.include_fields:
             orderbook, meta = await self._fetch_orderbook(
-                symbol, params.orderbook_depth, primary_venue
+                symbol, orderbook_depth, primary_venue
             )
             data.orderbook = orderbook
             source_metas.append(meta)
+
+        if "all" in params.include_fields or "aggregated_orderbook" in params.include_fields:
+            try:
+                agg_orderbook, agg_meta = await self._fetch_aggregated_orderbook(
+                    symbol, orderbook_depth, params.venues
+                )
+                data.aggregated_orderbook = agg_orderbook
+                source_metas.extend(agg_meta)
+            except Exception as e:
+                logger.warning(f"Failed to fetch aggregated orderbook: {e}")
+                warnings.append(f"aggregated_orderbook fetch failed: {str(e)}")
 
         # 计算型字段
         if "all" in params.include_fields or "volume_profile" in params.include_fields:
@@ -329,6 +353,110 @@ class MarketMicrostructureTool:
             return OrderbookData(**data), meta
         else:
             raise ValueError(f"Unsupported exchange: {exchange}")
+
+    async def _fetch_aggregated_orderbook(
+        self, symbol: str, depth: int, venues: List[str]
+    ) -> Tuple[AggregatedOrderbook, List[SourceMeta]]:
+        """获取多个交易所的订单簿并聚合"""
+        import asyncio
+        from collections import defaultdict
+
+        if not venues or len(venues) == 0:
+            venues = ["binance"]  # 默认使用binance
+
+        # 并行获取多个交易所的订单簿
+        tasks = []
+        valid_venues = []
+        for venue in venues:
+            if venue in ["binance", "okx"]:
+                tasks.append(self._fetch_orderbook(symbol, depth, venue))
+                valid_venues.append(venue)
+
+        if not tasks:
+            raise ValueError("No valid venues specified for aggregated orderbook")
+
+        # 并行获取
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 收集成功的订单簿和元数据
+        orderbooks = []
+        metas = []
+        successful_venues = []
+        for venue, result in zip(valid_venues, results):
+            if isinstance(result, Exception):
+                logger.warning(f"Failed to fetch orderbook from {venue}: {result}")
+                continue
+            orderbook, meta = result
+            orderbooks.append(orderbook)
+            metas.append(meta)
+            successful_venues.append(venue)
+
+        if not orderbooks:
+            raise ValueError("Failed to fetch orderbooks from all venues")
+
+        # 聚合订单簿
+        # 1. 合并所有买单和卖单
+        all_bids = []
+        all_asks = []
+        for ob in orderbooks:
+            all_bids.extend(ob.bids)
+            all_asks.extend(ob.asks)
+
+        # 2. 按价格聚合相同价格的订单
+        bid_dict = defaultdict(float)
+        ask_dict = defaultdict(float)
+
+        for bid in all_bids:
+            bid_dict[bid.price] += bid.quantity
+
+        for ask in all_asks:
+            ask_dict[ask.price] += ask.quantity
+
+        # 3. 转换为列表并排序
+        from src.core.models import OrderbookLevel
+        aggregated_bids = [
+            OrderbookLevel(price=price, quantity=qty)
+            for price, qty in bid_dict.items()
+        ]
+        aggregated_asks = [
+            OrderbookLevel(price=price, quantity=qty)
+            for price, qty in ask_dict.items()
+        ]
+
+        # 买单按价格降序排序（最高买价在前）
+        aggregated_bids.sort(key=lambda x: x.price, reverse=True)
+        # 卖单按价格升序排序（最低卖价在前）
+        aggregated_asks.sort(key=lambda x: x.price)
+
+        # 限制深度
+        aggregated_bids = aggregated_bids[:depth]
+        aggregated_asks = aggregated_asks[:depth]
+
+        # 4. 计算统计数据
+        best_bid = aggregated_bids[0].price if aggregated_bids else 0.0
+        best_ask = aggregated_asks[0].price if aggregated_asks else 0.0
+        global_mid = (best_bid + best_ask) / 2 if best_bid and best_ask else 0.0
+
+        # 计算总深度（USD）
+        total_bid_depth_usd = sum(b.price * b.quantity for b in aggregated_bids)
+        total_ask_depth_usd = sum(a.price * a.quantity for a in aggregated_asks)
+
+        # 5. 构建聚合订单簿
+        from datetime import datetime
+        agg_orderbook = AggregatedOrderbook(
+            symbol=symbol,
+            exchanges=successful_venues,
+            timestamp=int(datetime.utcnow().timestamp() * 1000),
+            bids=aggregated_bids,
+            asks=aggregated_asks,
+            best_bid=best_bid,
+            best_ask=best_ask,
+            global_mid=global_mid,
+            total_bid_depth_usd=total_bid_depth_usd,
+            total_ask_depth_usd=total_ask_depth_usd,
+        )
+
+        return agg_orderbook, metas
 
     async def _fetch_venue_specs(
         self, symbol: str, exchange: Optional[str]

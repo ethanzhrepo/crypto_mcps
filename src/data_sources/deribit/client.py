@@ -41,9 +41,9 @@ class DeribitClient(BaseDataSource):
         # 暂时只实现公共端点
         return headers
 
-    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None) -> Any:
+    async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None, headers: Optional[Dict[str, str]] = None) -> Any:
         """获取原始数据"""
-        return await self._make_request("GET", endpoint, params, base_url_override)
+        return await self._make_request("GET", endpoint, params, base_url_override, headers)
 
     def transform(self, raw_data: Any, data_type: str) -> Dict[str, Any]:
         """

@@ -28,6 +28,7 @@ from src.core.models import (
 from src.data_sources.investing_calendar import InvestingCalendarClient
 from src.data_sources.macro import MacroDataClient
 from src.data_sources.cme import CMEFedWatchClient
+from src.validators import ResponseValidator
 
 logger = structlog.get_logger()
 
@@ -118,17 +119,19 @@ class MacroHubTool:
             if self.fred_client:
                 try:
                     fed_data, meta = await self._fetch_fed_data()
-                    # 将FED数据添加到crypto_indices或单独字段
-                    if not data.crypto_indices:
-                        data.crypto_indices = []
-                    data.crypto_indices.extend(fed_data)
-                    source_metas.append(meta)
+                    # 商用服务器：空数据检测
+                    if not fed_data or len(fed_data) == 0:
+                        logger.error("fred_returned_empty_data", mode=params.mode)
+                        warnings.append("FED API返回空数据，请检查FRED_API_KEY或API配额")
+                    else:
+                        data.fed = fed_data
+                        source_metas.append(meta)
                 except Exception as e:
-                    logger.warning(f"Failed to fetch FED data: {e}")
-                    warnings.append(f"FED data fetch failed: {str(e)}")
+                    logger.error("fred_fetch_failed", error=str(e), exc_info=True)
+                    warnings.append(f"FED数据获取失败: {str(e)}")
             else:
                 warnings.append(
-                    "FED data requires FRED API key. "
+                    "FED数据需要FRED_API_KEY "
                     "Sign up at https://fredaccount.stlouisfed.org/apikeys"
                 )
 
@@ -137,17 +140,21 @@ class MacroHubTool:
             if self.yfinance_client:
                 try:
                     indices_data, meta = await self._fetch_market_indices()
-                    if not data.crypto_indices:
-                        data.crypto_indices = []
-                    data.crypto_indices.extend(indices_data)
-                    source_metas.append(meta)
+                    # 商用服务器：空数据检测
+                    if not indices_data or len(indices_data) == 0:
+                        logger.error("yfinance_returned_empty_data", mode=params.mode)
+                        warnings.append("Yahoo Finance返回空数据，可能是API配额或网络问题")
+                        data.indices = []  # 设置为空列表而不是保持None
+                    else:
+                        data.indices = indices_data
+                        source_metas.append(meta)
                 except Exception as e:
-                    logger.warning(f"Failed to fetch market indices: {e}")
-                    warnings.append(f"Market indices fetch failed: {str(e)}")
+                    logger.error("market_indices_fetch_failed", error=str(e), exc_info=True)
+                    warnings.append(f"传统指数获取失败: {str(e)}")
+                    data.indices = []  # 异常时也设置为空列表
             else:
                 warnings.append(
-                    "Market indices require Yahoo Finance client (no API key needed, "
-                    "but client not initialized)"
+                    "传统指数需要Yahoo Finance client (无需API key，但客户端未初始化)"
                 )
 
         # 财经日历（Investing.com）
@@ -215,6 +222,13 @@ class MacroHubTool:
                 continue
             cleaned_source_metas.append(meta)
 
+        # 商用服务器：数据完整性验证
+        validation_issues = ResponseValidator.validate_macro_hub(data, params.mode)
+        if validation_issues:
+            for issue in validation_issues:
+                logger.warning("macro_hub_data_validation_failed", issue=issue, mode=params.mode)
+                warnings.append(f"[DATA_VALIDATION] {issue}")
+
         return MacroHubOutput(
             data=data,
             source_meta=cleaned_source_metas,
@@ -233,90 +247,133 @@ class MacroHubTool:
         return [IndexData(**idx) for idx in data], meta
 
     async def _fetch_fed_data(self) -> Tuple[List[IndexData], SourceMeta]:
-        """获取FED数据（FRED API）"""
+        """获取FED数据（FRED API）- 使用增强方法获取YoY和涨跌"""
         results = []
 
-        # 获取通胀数据
-        try:
-            inflation_data, meta = await self.fred_client.get_inflation_data()
-            for key, value in inflation_data.items():
-                if value and value.get("value") is not None:
+        # 初始化默认 meta 防止 UnboundLocalError
+        from src.core.source_meta import SourceMetaBuilder
+        meta = SourceMetaBuilder.build(
+            provider="fred",
+            endpoint="/series",
+            ttl_seconds=3600,
+        )
+
+        # 通胀指标 - 使用 get_series_with_yoy() 获取YoY年率
+        inflation_series = [
+            ("CPIAUCSL", "CPI"),
+            ("CPILFESL", "CPI Core"),
+            ("PCEPI", "PCE"),
+            ("PCEPILFE", "PCE Core"),
+        ]
+
+        for series_id, name in inflation_series:
+            try:
+                data, fetched_meta = await self.fred_client.get_series_with_yoy(series_id)
+                meta = fetched_meta
+                if data.get("value") is not None:
                     results.append(IndexData(
-                        name=key.upper().replace("_", " "),
-                        symbol=key,
-                        value=value["value"],
-                        change_24h=None,
-                        change_percent_24h=None,
-                        timestamp=value.get("date"),
+                        name=name,
+                        symbol=series_id,
+                        value=data["value"],
+                        date=data.get("date"),
+                        year_over_year_rate=data.get("year_over_year_rate"),
+                        units=data.get("units"),
+                        change_24h=0.0,  # 通胀数据为月度，无日涨跌
+                        change_percent=0.0,
                     ))
-        except Exception as e:
-            logger.warning(f"Failed to fetch inflation data from FRED: {e}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch {name} from FRED: {e}")
 
-        # 获取就业数据
-        try:
-            employment_data, emp_meta = await self.fred_client.get_employment_data()
-            for key, value in employment_data.items():
-                if value and value.get("value") is not None:
+        # 就业指标 - 使用 get_series_with_yoy() 获取YoY变化
+        employment_series = [
+            ("UNRATE", "Unemployment Rate"),
+            ("PAYEMS", "Nonfarm Payrolls"),
+        ]
+
+        for series_id, name in employment_series:
+            try:
+                data, emp_meta = await self.fred_client.get_series_with_yoy(series_id)
+                meta = emp_meta
+                if data.get("value") is not None:
                     results.append(IndexData(
-                        name=key.replace("_", " ").title(),
-                        symbol=key,
-                        value=value["value"],
-                        change_24h=None,
-                        change_percent_24h=None,
-                        timestamp=value.get("date"),
+                        name=name,
+                        symbol=series_id,
+                        value=data["value"],
+                        date=data.get("date"),
+                        year_over_year_rate=data.get("year_over_year_rate"),
+                        units=data.get("units"),
+                        change_24h=0.0,  # 就业数据为月度，无日涨跌
+                        change_percent=0.0,
                     ))
-            meta = emp_meta  # 使用最后一个meta
-        except Exception as e:
-            logger.warning(f"Failed to fetch employment data from FRED: {e}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch {name} from FRED: {e}")
 
-        # 获取收益率曲线
-        try:
-            yield_curve, yc_meta = await self.fred_client.get_yield_curve()
+        # 国债收益率 - 使用 get_series_with_change() 获取日涨跌
+        treasury_series = [
+            ("DGS2", "Treasury 2Y Yield"),
+            ("DGS10", "Treasury 10Y Yield"),
+            ("DGS30", "Treasury 30Y Yield"),
+        ]
 
-            # 添加各期限收益率
-            for key in ["treasury_2y", "treasury_10y", "treasury_30y"]:
-                value = yield_curve.get(key)
-                if value and value.get("value") is not None:
+        for series_id, name in treasury_series:
+            try:
+                data, yc_meta = await self.fred_client.get_series_with_change(series_id, days=1)
+                meta = yc_meta
+                if data.get("value") is not None:
                     results.append(IndexData(
-                        name=key.replace("_", " ").title() + " Yield",
-                        symbol=key,
-                        value=value["value"],
-                        change_24h=None,
-                        change_percent_24h=None,
-                        timestamp=value.get("date"),
+                        name=name,
+                        symbol=series_id,
+                        value=data["value"],
+                        date=data.get("date"),
+                        units=data.get("units"),
+                        change_24h=data.get("change", 0.0),  # 真实日涨跌
+                        change_percent=data.get("change_percent", 0.0),
                     ))
+            except Exception as e:
+                logger.warning(f"Failed to fetch {name} from FRED: {e}")
 
-            # 添加利差
-            if yield_curve.get("spread_10y_2y") is not None:
+        # 收益率利差 - 计算10Y-2Y
+        try:
+            # 获取10Y和2Y最新值
+            data_10y, _ = await self.fred_client.get_latest_value("DGS10")
+            data_2y, _ = await self.fred_client.get_latest_value("DGS2")
+
+            if data_10y.get("value") is not None and data_2y.get("value") is not None:
+                spread = data_10y["value"] - data_2y["value"]
                 results.append(IndexData(
                     name="10Y-2Y Yield Spread",
-                    symbol="spread_10y_2y",
-                    value=yield_curve["spread_10y_2y"],
-                    change_24h=None,
-                    change_percent_24h=None,
-                    timestamp=None,
+                    symbol="DGS10-DGS2",
+                    value=spread,
+                    date=data_10y.get("date"),
+                    units="Percent",
+                    change_24h=0.0,
+                    change_percent=0.0,
                 ))
-
-            meta = yc_meta
         except Exception as e:
-            logger.warning(f"Failed to fetch yield curve from FRED: {e}")
+            logger.warning(f"Failed to calculate yield spread: {e}")
 
-        # 获取联储工具（TGA、RRP）
-        try:
-            fed_tools, ft_meta = await self.fred_client.get_fed_tools()
-            for key, value in fed_tools.items():
-                if value and value.get("value") is not None:
+        # 联储工具（TGA、RRP）- 使用普通 get_latest_value()
+        fed_tool_series = [
+            ("WTREGEN", "TGA Balance"),
+            ("RRPONTSYD", "RRP Balance"),
+        ]
+
+        for series_id, name in fed_tool_series:
+            try:
+                data, ft_meta = await self.fred_client.get_latest_value(series_id)
+                meta = ft_meta
+                if data.get("value") is not None:
                     results.append(IndexData(
-                        name=key.upper() + " Balance",
-                        symbol=key,
-                        value=value["value"],
-                        change_24h=None,
-                        change_percent_24h=None,
-                        timestamp=value.get("date"),
+                        name=name,
+                        symbol=series_id,
+                        value=data["value"],
+                        date=data.get("date"),
+                        units=data.get("units"),
+                        change_24h=0.0,
+                        change_percent=0.0,
                     ))
-            meta = ft_meta
-        except Exception as e:
-            logger.warning(f"Failed to fetch FED tools from FRED: {e}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch {name} from FRED: {e}")
 
         return results, meta
 

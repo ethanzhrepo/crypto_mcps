@@ -1,6 +1,6 @@
 # MCP Server - Crypto + Macro Tools v3
 
-A unified MCP server for crypto finance and macroeconomic data, providing 7 core tools plus a comprehensive onchain analytics suite.
+A unified MCP server for crypto finance and macroeconomic data, providing 8 core tools plus a comprehensive onchain analytics suite.
 
 ## 📋 Features
 
@@ -10,6 +10,7 @@ A unified MCP server for crypto finance and macroeconomic data, providing 7 core
 - `crypto_overview` - Comprehensive token overview (fundamentals, market metrics, supply, holders, social, sectors, dev activity)
 - `market_microstructure` - Market data & microstructure analysis
 - `derivatives_hub` - Unified derivatives data access
+- `telegram_search` - Telegram message search (Elasticsearch-backed via Telegram Scraper)
 - `web_research_search` - Web & research search (news, reports, parallel multi-source queries)
 - `grok_social_trace` - X/Twitter social media origin tracing via Grok (origin account, promotion likelihood, deepsearch-based interpretation)
 - `macro_hub` - Macro indicators, Fed data, indices & dashboards
@@ -68,6 +69,7 @@ Edit `docker/.env` and add at least:
 - `COINMARKETCAP_API_KEY` (free tier available)
 - `ETHERSCAN_API_KEY` (for holder data)
 - `GITHUB_TOKEN` (for dev activity, optional)
+- `TELEGRAM_SCRAPER_URL` (for telegram_search tool, optional)
 - Additional keys for onchain tools as needed
 
 ### Running the Server
@@ -235,6 +237,9 @@ Environment variables and API key configuration.
 - For the `grok_social_trace` tool, you must configure the XAI API key:
   - Set `XAI_API_KEY=...` in your environment or `docker/.env` file
   - Both stdio and HTTP servers use this environment variable
+- For the `telegram_search` tool, you must configure the Telegram Scraper URL:
+  - Set `TELEGRAM_SCRAPER_URL=...` in your environment or `docker/.env` file
+  - Points to a reachable Telegram Scraper/Elasticsearch proxy
 
 ## 🔧 Tool Usage Example
 

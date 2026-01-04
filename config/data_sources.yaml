@@ -136,6 +136,10 @@ data_source_configs:
     base_url: "https://api.bscscan.com/api"
     requires_api_key: true
 
+  basescan:
+    base_url: "https://api.basescan.org/api"
+    requires_api_key: true
+
   github:
     base_url: "https://api.github.com"
     requires_api_key: false  # 无token时有更低限流

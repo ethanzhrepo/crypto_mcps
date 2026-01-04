@@ -3,7 +3,7 @@
 """
 from datetime import datetime
 from enum import Enum, StrEnum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -1597,6 +1597,562 @@ class DrawChartOutput(BaseModel):
     @field_validator("as_of_utc", mode="before")
     @classmethod
     def format_timestamp(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat() + "Z"
+        return v
+
+
+# ==================== new tool models ====================
+
+
+class EtfFlowsIncludeField(StrEnum):
+    FLOWS = "flows"
+    HOLDINGS = "holdings"
+    ALL = "all"
+
+
+class EtfFlowsHoldingsInput(BaseModel):
+    """etf_flows_holdings 输入参数"""
+
+    dataset: str = Field(default="bitcoin", description="数据集：bitcoin / ethereum")
+    url_override: Optional[str] = Field(default=None, description="可选的Farside URL覆盖")
+    include_fields: List[EtfFlowsIncludeField] = Field(
+        default=[EtfFlowsIncludeField.FLOWS],
+        description="返回字段：flows, holdings, all",
+    )
+
+
+class EtfFlowRecord(BaseModel):
+    """ETF Flow 记录（原始字段）"""
+
+    data: Dict[str, Any]
+
+
+class EtfHoldingRecord(BaseModel):
+    """ETF 持仓记录（原始字段）"""
+
+    data: Dict[str, Any]
+
+
+class EtfFlowsHoldingsOutput(BaseModel):
+    """etf_flows_holdings 输出"""
+
+    dataset: str
+    flows: List[EtfFlowRecord] = Field(default_factory=list)
+    holdings: List[EtfHoldingRecord] = Field(default_factory=list)
+    source_meta: List[SourceMeta] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    as_of_utc: str
+
+    @field_validator("as_of_utc", mode="before")
+    @classmethod
+    def format_etf_timestamp(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat() + "Z"
+        return v
+
+
+class CexNetflowReservesInput(BaseModel):
+    """cex_netflow_reserves 输入参数"""
+
+    exchange: Optional[str] = Field(default=None, description="交易所名称（如 binance）")
+    include_whale_transfers: bool = Field(
+        default=False, description="是否附带 Whale Alert 大额转账"
+    )
+    min_transfer_usd: int = Field(default=500000, description="大额转账最小USD")
+    lookback_hours: int = Field(default=24, description="大额转账回溯小时数")
+
+
+class CexNetflowReservesOutput(BaseModel):
+    """cex_netflow_reserves 输出"""
+
+    exchange: Optional[str] = None
+    reserves: Dict[str, Any] = Field(default_factory=dict)
+    whale_transfers: Optional[WhaleTransfersData] = None
+    source_meta: List[SourceMeta] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    as_of_utc: str
+
+    @field_validator("as_of_utc", mode="before")
+    @classmethod
+    def format_cex_timestamp(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat() + "Z"
+        return v
+
+
+class LendingLiquidationRiskInput(BaseModel):
+    """lending_liquidation_risk 输入参数"""
+
+    asset: Optional[str] = Field(default=None, description="资产符号过滤（如 ETH, USDC）")
+    protocols: Optional[List[str]] = Field(default=None, description="协议过滤（如 aave）")
+    include_liquidations: bool = Field(default=False, description="是否包含清算数据")
+    lookback_hours: int = Field(default=24, description="清算数据回溯小时数")
+
+
+class LendingLiquidationRiskOutput(BaseModel):
+    """lending_liquidation_risk 输出"""
+
+    asset: Optional[str] = None
+    yields: List[Dict[str, Any]] = Field(default_factory=list)
+    liquidations: Optional[LiquidationsData] = None
+    source_meta: List[SourceMeta] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    as_of_utc: str
+
+    @field_validator("as_of_utc", mode="before")
+    @classmethod
+    def format_lending_timestamp(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat() + "Z"
+        return v
+
+
+class StablecoinHealthInput(BaseModel):
+    """stablecoin_health 输入参数"""
+
+    symbol: Optional[str] = Field(default=None, description="稳定币符号过滤，如 USDT")
+    chains: Optional[List[str]] = Field(default=None, description="链过滤")
+
+
+class StablecoinHealthOutput(BaseModel):
+    """stablecoin_health 输出"""
+
+    symbol: Optional[str] = None
+    stablecoins: List[Dict[str, Any]] = Field(default_factory=list)
+    source_meta: List[SourceMeta] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    as_of_utc: str
+
+    @field_validator("as_of_utc", mode="before")
+    @classmethod
+    def format_stablecoin_timestamp(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat() + "Z"
+        return v
+
+
+class OptionsVolSkewInput(BaseModel):
+    """options_vol_skew 输入参数"""
+
+    symbol: str = Field(..., description="标的符号，如 BTC 或 ETH")
+    expiry: Optional[str] = Field(default=None, description="到期日或合约ID（可选）")
+    providers: List[str] = Field(
+        default_factory=lambda: ["deribit", "okx", "binance"],
+        description="数据源列表：deribit, okx, binance",
+    )
+
+
+class OptionsVolSkewOutput(BaseModel):
+    """options_vol_skew 输出"""
+
+    symbol: str
+    data: Dict[str, Any] = Field(default_factory=dict)
+    source_meta: List[SourceMeta] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    as_of_utc: str
+
+    @field_validator("as_of_utc", mode="before")
+    @classmethod
+    def format_options_timestamp(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat() + "Z"
+        return v
+
+
+class BlockspaceMevInput(BaseModel):
+    """blockspace_mev 输入参数"""
+
+    chain: str = Field(default="ethereum", description="链名称（目前仅支持ethereum）")
+    limit: int = Field(default=100, description="MEV-Boost记录数量")
+
+
+class BlockspaceMevOutput(BaseModel):
+    """blockspace_mev 输出"""
+
+    chain: str
+    mev_boost: Dict[str, Any] = Field(default_factory=dict)
+    gas_oracle: Optional[Dict[str, Any]] = None
+    source_meta: List[SourceMeta] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    as_of_utc: str
+
+    @field_validator("as_of_utc", mode="before")
+    @classmethod
+    def format_blockspace_timestamp(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat() + "Z"
+        return v
+
+
+class HyperliquidMarketIncludeField(StrEnum):
+    FUNDING = "funding"
+    OPEN_INTEREST = "open_interest"
+    ORDERBOOK = "orderbook"
+    TRADES = "trades"
+    ASSET_CONTEXTS = "asset_contexts"
+    ALL = "all"
+
+
+class HyperliquidMarketInput(BaseModel):
+    """hyperliquid_market 输入参数"""
+
+    symbol: str = Field(..., description="标的符号，如 BTC")
+    include_fields: List[HyperliquidMarketIncludeField] = Field(
+        default=[HyperliquidMarketIncludeField.ALL],
+        description="返回字段：funding, open_interest, orderbook, trades, asset_contexts, all",
+    )
+
+
+class HyperliquidMarketData(BaseModel):
+    """hyperliquid_market 数据体"""
+
+    funding: Optional[Any] = None
+    open_interest: Optional[Any] = None
+    orderbook: Optional[Any] = None
+    trades: Optional[Any] = None
+    asset_contexts: Optional[Any] = None
+
+
+class HyperliquidMarketOutput(BaseModel):
+    """hyperliquid_market 输出"""
+
+    symbol: str
+    data: HyperliquidMarketData
+    source_meta: List[SourceMeta] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    as_of_utc: str
+
+    @field_validator("as_of_utc", mode="before")
+    @classmethod
+    def format_hyperliquid_timestamp(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat() + "Z"
+        return v
+
+
+# ==================== price_history 工具模型 ====================
+
+
+class PriceHistoryIncludeIndicator(StrEnum):
+    """价格历史技术指标选项"""
+
+    SMA = "sma"
+    EMA = "ema"
+    RSI = "rsi"
+    MACD = "macd"
+    BOLLINGER = "bollinger"
+    ATR = "atr"
+    ALL = "all"
+
+
+class PriceHistoryInput(BaseModel):
+    """price_history 输入参数"""
+
+    symbol: str = Field(..., description="交易对符号，如 BTC/USDT, ETH/USDT")
+    interval: Literal["1h", "4h", "1d", "1w", "1M"] = Field(
+        default="1d", description="K线周期: 1h=小时, 4h=4小时, 1d=日线, 1w=周线, 1M=月线"
+    )
+    lookback_days: int = Field(
+        default=365, ge=7, le=1825, description="回溯天数，默认365天，最多5年"
+    )
+    include_indicators: List[PriceHistoryIncludeIndicator] = Field(
+        default=[
+            PriceHistoryIncludeIndicator.SMA,
+            PriceHistoryIncludeIndicator.RSI,
+            PriceHistoryIncludeIndicator.MACD,
+            PriceHistoryIncludeIndicator.BOLLINGER,
+        ],
+        description="需要计算的技术指标: sma, ema, rsi, macd, bollinger, atr, all",
+    )
+    indicator_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="指标参数覆盖，如 {'sma_periods': [20, 50, 200], 'rsi_period': 14}",
+    )
+
+
+class OHLCVData(BaseModel):
+    """OHLCV K线数据"""
+
+    timestamp: int = Field(description="Unix时间戳(ms)")
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
+class PriceHistoryIndicators(BaseModel):
+    """技术指标数据"""
+
+    sma: Optional[Dict[str, List[Optional[float]]]] = Field(
+        default=None, description="简单移动平均: {sma_20: [...], sma_50: [...], sma_200: [...]}"
+    )
+    ema: Optional[Dict[str, List[Optional[float]]]] = Field(
+        default=None, description="指数移动平均: {ema_12: [...], ema_26: [...]}"
+    )
+    rsi: Optional[Dict[str, Any]] = Field(
+        default=None, description="RSI: {rsi_14: [...], current: 65.5}"
+    )
+    macd: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="MACD: {macd_line: [...], signal_line: [...], histogram: [...], current_signal: 'bullish'}",
+    )
+    bollinger: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="布林带: {upper: [...], middle: [...], lower: [...], bandwidth: 0.15}",
+    )
+    atr: Optional[Dict[str, Any]] = Field(
+        default=None, description="ATR: {atr_14: [...], current: 1500.5}"
+    )
+
+
+class PriceHistoryStatistics(BaseModel):
+    """价格统计数据"""
+
+    volatility_30d: Optional[float] = Field(default=None, description="30日年化波动率")
+    volatility_90d: Optional[float] = Field(default=None, description="90日年化波动率")
+    max_drawdown_30d: Optional[float] = Field(default=None, description="30日最大回撤")
+    max_drawdown_90d: Optional[float] = Field(default=None, description="90日最大回撤")
+    sharpe_ratio_90d: Optional[float] = Field(
+        default=None, description="90日夏普比率(无风险利率5%)"
+    )
+    current_vs_ath_pct: Optional[float] = Field(default=None, description="相对ATH跌幅%")
+    current_vs_atl_pct: Optional[float] = Field(default=None, description="相对ATL涨幅%")
+    price_change_7d_pct: Optional[float] = Field(default=None, description="7日价格变化%")
+    price_change_30d_pct: Optional[float] = Field(default=None, description="30日价格变化%")
+    price_change_90d_pct: Optional[float] = Field(default=None, description="90日价格变化%")
+
+
+class SupportResistance(BaseModel):
+    """支撑阻力位"""
+
+    support_levels: List[float] = Field(default_factory=list, description="支撑位列表")
+    resistance_levels: List[float] = Field(default_factory=list, description="阻力位列表")
+
+
+class PriceHistoryOutput(BaseModel):
+    """price_history 输出"""
+
+    symbol: str
+    interval: str
+    data_points: int = Field(description="数据点数量")
+    date_range: Dict[str, str] = Field(description="日期范围: {start: '...', end: '...'}")
+    ohlcv: List[OHLCVData] = Field(description="K线数据列表")
+    indicators: PriceHistoryIndicators = Field(description="技术指标")
+    statistics: PriceHistoryStatistics = Field(description="统计指标")
+    support_resistance: SupportResistance = Field(description="支撑/阻力位")
+    source_meta: List[SourceMeta] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    as_of_utc: str
+
+    @field_validator("as_of_utc", mode="before")
+    @classmethod
+    def format_price_history_timestamp(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat() + "Z"
+        return v
+
+
+# ==================== sector_peers 工具模型 ====================
+
+
+class SectorPeersSortBy(StrEnum):
+    """排序字段"""
+
+    MARKET_CAP = "market_cap"
+    TVL = "tvl"
+    VOLUME_24H = "volume_24h"
+    PRICE_CHANGE_7D = "price_change_7d"
+
+
+class SectorPeersInput(BaseModel):
+    """sector_peers 输入参数"""
+
+    symbol: str = Field(..., description="目标代币符号，如 AAVE, UNI")
+    limit: int = Field(default=10, ge=3, le=20, description="返回竞品数量")
+    sort_by: SectorPeersSortBy = Field(
+        default=SectorPeersSortBy.MARKET_CAP, description="排序字段"
+    )
+    include_metrics: List[str] = Field(
+        default=["market", "tvl", "fees", "social"],
+        description="包含的对比指标: market, tvl, fees, social",
+    )
+
+    @field_validator("symbol")
+    @classmethod
+    def symbol_uppercase(cls, v: str) -> str:
+        return v.upper()
+
+
+class PeerInfo(BaseModel):
+    """竞品代币信息"""
+
+    rank: int
+    symbol: str
+    name: str
+    is_target: bool = Field(default=False, description="是否为目标代币")
+    market_cap: Optional[float] = None
+    market_cap_rank: Optional[int] = None
+    tvl: Optional[float] = None
+    tvl_rank_in_sector: Optional[int] = None
+    fees_24h: Optional[float] = None
+    fees_7d: Optional[float] = None
+    price: Optional[float] = None
+    price_change_24h_pct: Optional[float] = None
+    price_change_7d_pct: Optional[float] = None
+    volume_24h: Optional[float] = None
+    holders: Optional[int] = None
+    twitter_followers: Optional[int] = None
+    github_commits_30d: Optional[int] = None
+
+
+class SectorComparison(BaseModel):
+    """板块对比分析"""
+
+    valuation_ratios: Optional[Dict[str, Any]] = Field(
+        default=None, description="估值比率对比"
+    )
+    fee_multiples: Optional[Dict[str, Any]] = Field(
+        default=None, description="费用收入倍数对比"
+    )
+    market_share: Optional[Dict[str, Any]] = Field(
+        default=None, description="市场份额分析"
+    )
+
+
+class SectorStats(BaseModel):
+    """板块统计"""
+
+    total_tvl: Optional[float] = None
+    total_market_cap: Optional[float] = None
+    avg_price_change_7d_pct: Optional[float] = None
+    top_performer_7d: Optional[Dict[str, Any]] = None
+    worst_performer_7d: Optional[Dict[str, Any]] = None
+
+
+class SectorPeersOutput(BaseModel):
+    """sector_peers 输出"""
+
+    target_symbol: str
+    sector: str = Field(description="板块名称，如 'DeFi - Lending'")
+    sector_description: Optional[str] = None
+    peers: List[PeerInfo] = Field(description="竞品列表")
+    comparison: SectorComparison = Field(description="对比分析")
+    sector_stats: SectorStats = Field(description="板块统计")
+    source_meta: List[SourceMeta] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    as_of_utc: str
+
+    @field_validator("as_of_utc", mode="before")
+    @classmethod
+    def format_sector_peers_timestamp(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat() + "Z"
+        return v
+
+
+# ==================== sentiment_aggregator 工具模型 ====================
+
+
+class SentimentSource(StrEnum):
+    """情绪数据源"""
+
+    TELEGRAM = "telegram"
+    TWITTER = "twitter"
+    NEWS = "news"
+    REDDIT = "reddit"
+
+
+class SentimentAggregatorInput(BaseModel):
+    """sentiment_aggregator 输入参数"""
+
+    symbol: str = Field(..., description="代币符号，如 BTC, ETH")
+    lookback_hours: int = Field(
+        default=24, ge=1, le=168, description="回溯小时数(最多7天)"
+    )
+    sources: List[SentimentSource] = Field(
+        default=[SentimentSource.TELEGRAM, SentimentSource.TWITTER, SentimentSource.NEWS],
+        description="数据源列表: telegram, twitter, news, reddit",
+    )
+    include_raw_samples: bool = Field(
+        default=False, description="是否返回原始消息样本"
+    )
+    sample_limit: int = Field(default=10, ge=1, le=50, description="每个来源的样本数量")
+
+    @field_validator("symbol")
+    @classmethod
+    def symbol_uppercase(cls, v: str) -> str:
+        return v.upper()
+
+
+class OverallSentiment(BaseModel):
+    """综合情绪"""
+
+    score: int = Field(ge=0, le=100, description="情绪评分 0-100, 50=中性")
+    label: Literal["very_bearish", "bearish", "neutral", "bullish", "very_bullish"]
+    confidence: int = Field(ge=0, le=100, description="置信度 0-100")
+    trend_vs_24h_ago: Optional[Literal["improving", "stable", "declining"]] = None
+    trend_vs_7d_ago: Optional[Literal["improving", "stable", "declining"]] = None
+
+
+class SourceSentimentBreakdown(BaseModel):
+    """单源情绪分解"""
+
+    score: int = Field(ge=0, le=100)
+    message_count: Optional[int] = None
+    tweet_count: Optional[int] = None
+    article_count: Optional[int] = None
+    post_count: Optional[int] = None
+    positive_count: Optional[int] = None
+    negative_count: Optional[int] = None
+    neutral_count: Optional[int] = None
+    key_topics: Optional[List[str]] = None
+    top_sources: Optional[List[str]] = None
+    influencer_sentiment: Optional[int] = None
+    retail_sentiment: Optional[int] = None
+    bot_percentage: Optional[float] = None
+
+
+class SentimentSignal(BaseModel):
+    """情绪信号"""
+
+    type: Literal["bullish", "bearish", "warning", "neutral"]
+    strength: int = Field(ge=1, le=10, description="信号强度 1-10")
+    source: str
+    reason: str
+
+
+class HistoricalSentimentPoint(BaseModel):
+    """历史情绪点"""
+
+    timestamp: str
+    score: int = Field(ge=0, le=100)
+
+
+class SentimentAggregatorOutput(BaseModel):
+    """sentiment_aggregator 输出"""
+
+    symbol: str
+    analysis_period: Dict[str, str] = Field(description="分析周期: {start: '...', end: '...'}")
+    overall_sentiment: OverallSentiment = Field(description="综合情绪")
+    source_breakdown: Dict[str, SourceSentimentBreakdown] = Field(
+        description="分源情绪"
+    )
+    signals: List[SentimentSignal] = Field(default_factory=list, description="情绪信号")
+    historical_sentiment: List[HistoricalSentimentPoint] = Field(
+        default_factory=list, description="历史情绪趋势"
+    )
+    raw_samples: Optional[Dict[str, List[Dict[str, Any]]]] = Field(
+        default=None, description="原始消息样本(如果请求)"
+    )
+    source_meta: List[SourceMeta] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    as_of_utc: str
+
+    @field_validator("as_of_utc", mode="before")
+    @classmethod
+    def format_sentiment_timestamp(cls, v):
         if isinstance(v, datetime):
             return v.isoformat() + "Z"
         return v

@@ -381,7 +381,14 @@ class MacroHubTool:
         """获取传统市场指数（Yahoo Finance）"""
         results = []
 
-        # 获取股指
+        from src.core.source_meta import SourceMetaBuilder
+        meta = SourceMetaBuilder.build(
+            provider="yfinance",
+            endpoint="/v7/finance/quote",
+            ttl_seconds=300,
+        )
+
+        # 获取股指（含 Russell 2000）
         try:
             indices_data, meta = await self.yfinance_client.get_market_indices()
             for key, quote in indices_data.items():
@@ -396,13 +403,6 @@ class MacroHubTool:
                     ))
         except Exception as e:
             logger.warning(f"Failed to fetch market indices from YFinance: {e}")
-            # 如果失败，使用空meta
-            from src.core.source_meta import SourceMetaBuilder
-            meta = SourceMetaBuilder.build(
-                provider="yfinance",
-                endpoint="/v7/finance/quote",
-                ttl_seconds=300,
-            )
 
         # 获取大宗商品
         try:
@@ -427,7 +427,7 @@ class MacroHubTool:
             if dxy_data and dxy_data.get("price") is not None:
                 results.append(IndexData(
                     name="US Dollar Index",
-                    symbol=dxy_data.get("symbol", "DXY"),
+                    symbol=dxy_data.get("symbol", "DX-Y.NYB"),
                     value=dxy_data["price"],
                     change_24h=dxy_data.get("change"),
                     change_percent_24h=dxy_data.get("change_percent"),
@@ -436,6 +436,37 @@ class MacroHubTool:
             meta = dxy_meta
         except Exception as e:
             logger.warning(f"Failed to fetch DXY from YFinance: {e}")
+
+        # 获取加密货币（BTC/ETH）
+        try:
+            btc_data, btc_meta = await self.yfinance_client.get_quote("BTC-USD")
+            if btc_data and btc_data.get("price") is not None:
+                results.append(IndexData(
+                    name="Bitcoin",
+                    symbol="BTC-USD",
+                    value=btc_data["price"],
+                    change_24h=btc_data.get("change"),
+                    change_percent_24h=btc_data.get("change_percent"),
+                    timestamp=datetime.utcnow().isoformat() + "Z",
+                ))
+            meta = btc_meta
+        except Exception as e:
+            logger.warning(f"Failed to fetch BTC from YFinance: {e}")
+
+        try:
+            eth_data, eth_meta = await self.yfinance_client.get_quote("ETH-USD")
+            if eth_data and eth_data.get("price") is not None:
+                results.append(IndexData(
+                    name="Ethereum",
+                    symbol="ETH-USD",
+                    value=eth_data["price"],
+                    change_24h=eth_data.get("change"),
+                    change_percent_24h=eth_data.get("change_percent"),
+                    timestamp=datetime.utcnow().isoformat() + "Z",
+                ))
+            meta = eth_meta
+        except Exception as e:
+            logger.warning(f"Failed to fetch ETH from YFinance: {e}")
 
         return results, meta
 

@@ -16,6 +16,20 @@ from src.core.data_source_registry import registry
 from src.core.models import (
     CryptoOverviewInput,
     CryptoOverviewOutput,
+    EtfFlowsHoldingsInput,
+    EtfFlowsHoldingsOutput,
+    CexNetflowReservesInput,
+    CexNetflowReservesOutput,
+    LendingLiquidationRiskInput,
+    LendingLiquidationRiskOutput,
+    StablecoinHealthInput,
+    StablecoinHealthOutput,
+    OptionsVolSkewInput,
+    OptionsVolSkewOutput,
+    BlockspaceMevInput,
+    BlockspaceMevOutput,
+    HyperliquidMarketInput,
+    HyperliquidMarketOutput,
     DerivativesHubInput,
     DerivativesHubOutput,
     DrawChartInput,
@@ -48,6 +62,12 @@ from src.core.models import (
     TelegramSearchOutput,
     WebResearchInput,
     WebResearchOutput,
+    PriceHistoryInput,
+    PriceHistoryOutput,
+    SectorPeersInput,
+    SectorPeersOutput,
+    SentimentAggregatorInput,
+    SentimentAggregatorOutput,
 )
 from src.data_sources.binance import BinanceClient
 from src.data_sources.coingecko.client import CoinGeckoClient
@@ -66,11 +86,19 @@ from src.data_sources.yfinance import YahooFinanceClient
 from src.data_sources.investing_calendar import InvestingCalendarClient
 from src.middleware.cache import cache_manager
 from src.tools.chart import DrawChartTool
+from src.tools.blockspace_mev import BlockspaceMevTool
+from src.tools.cex_netflow_reserves import CexNetflowReservesTool
 from src.tools.crypto.overview import crypto_overview_tool
 from src.tools.derivatives import DerivativesHubTool
+from src.tools.etf_flows_holdings import EtfFlowsHoldingsTool
 from src.tools.grok_social_trace import GrokSocialTraceTool
+from src.tools.hyperliquid_market import HyperliquidMarketTool
+from src.tools.lending_liquidation_risk import LendingLiquidationRiskTool
 from src.tools.macro import MacroHubTool
 from src.tools.market import MarketMicrostructureTool
+from src.tools.market.price_history import PriceHistoryTool
+from src.tools.market.sector_peers import SectorPeersTool
+from src.tools.options_vol_skew import OptionsVolSkewTool
 from src.tools.onchain.activity import OnchainActivityTool
 from src.tools.onchain.bridge_volumes import OnchainBridgeVolumesTool
 from src.tools.onchain.contract_risk import OnchainContractRiskTool
@@ -80,6 +108,8 @@ from src.tools.onchain.stablecoins_cex import OnchainStablecoinsCEXTool
 from src.tools.onchain.token_unlocks import OnchainTokenUnlocksTool
 from src.tools.onchain.tvl_fees import OnchainTVLFeesTool
 from src.tools.onchain.whale_transfers import OnchainWhaleTransfersTool
+from src.tools.stablecoin_health import StablecoinHealthTool
+from src.tools.sentiment.aggregator import SentimentAggregatorTool
 from src.tools.telegram_search import TelegramSearchTool
 from src.tools.web_research import WebResearchTool
 from src.utils.config import config
@@ -98,6 +128,13 @@ tools = {
     "macro_hub": None,
     "draw_chart": None,
     "grok_social_trace": None,
+    "etf_flows_holdings": None,
+    "cex_netflow_reserves": None,
+    "lending_liquidation_risk": None,
+    "stablecoin_health": None,
+    "options_vol_skew": None,
+    "blockspace_mev": None,
+    "hyperliquid_market": None,
     "onchain_tvl_fees": None,
     "onchain_stablecoins_cex": None,
     "onchain_bridge_volumes": None,
@@ -107,6 +144,9 @@ tools = {
     "onchain_token_unlocks": None,
     "onchain_activity": None,
     "onchain_contract_risk": None,
+    "price_history": None,
+    "sector_peers": None,
+    "sentiment_aggregator": None,
 }
 
 
@@ -255,6 +295,83 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "cost_hints": {"latency_class": "fast"},
     },
     {
+        "name": "etf_flows_holdings",
+        "description": "ETF flows and holdings snapshots (free-first sources like Farside).",
+        "endpoint": "/tools/etf_flows_holdings",
+        "input_model": EtfFlowsHoldingsInput,
+        "output_model": EtfFlowsHoldingsOutput,
+        "capabilities": ["etf", "flows", "holdings", "macro"],
+        "examples": [{"description": "BTC ETF flows", "arguments": {"dataset": "bitcoin"}}],
+        "limitations": ["Holdings data requires a configured source; flows are best-effort parsing."],
+        "cost_hints": {"latency_class": "medium"},
+    },
+    {
+        "name": "cex_netflow_reserves",
+        "description": "CEX reserves from DefiLlama with optional Whale Alert transfers.",
+        "endpoint": "/tools/cex_netflow_reserves",
+        "input_model": CexNetflowReservesInput,
+        "output_model": CexNetflowReservesOutput,
+        "capabilities": ["cex", "reserves", "flows", "risk"],
+        "examples": [{"description": "Binance reserves", "arguments": {"exchange": "binance"}}],
+        "limitations": ["Whale Alert requires WHALE_ALERT_API_KEY for transfer data."],
+        "cost_hints": {"latency_class": "fast"},
+    },
+    {
+        "name": "lending_liquidation_risk",
+        "description": "Lending yield snapshots with optional liquidation data.",
+        "endpoint": "/tools/lending_liquidation_risk",
+        "input_model": LendingLiquidationRiskInput,
+        "output_model": LendingLiquidationRiskOutput,
+        "capabilities": ["lending", "liquidations", "risk"],
+        "examples": [{"description": "ETH lending yields", "arguments": {"asset": "ETH"}}],
+        "limitations": ["Coinglass liquidation data requires COINGLASS_API_KEY."],
+        "cost_hints": {"latency_class": "fast"},
+    },
+    {
+        "name": "stablecoin_health",
+        "description": "Stablecoin supply and chain distribution snapshots.",
+        "endpoint": "/tools/stablecoin_health",
+        "input_model": StablecoinHealthInput,
+        "output_model": StablecoinHealthOutput,
+        "capabilities": ["stablecoins", "onchain", "risk"],
+        "examples": [{"description": "USDC stablecoin health", "arguments": {"symbol": "USDC"}}],
+        "limitations": [],
+        "cost_hints": {"latency_class": "fast"},
+    },
+    {
+        "name": "options_vol_skew",
+        "description": "Options volatility/skew snapshots from Deribit/OKX/Binance.",
+        "endpoint": "/tools/options_vol_skew",
+        "input_model": OptionsVolSkewInput,
+        "output_model": OptionsVolSkewOutput,
+        "capabilities": ["options", "volatility", "derivatives"],
+        "examples": [{"description": "BTC vol snapshot", "arguments": {"symbol": "BTC"}}],
+        "limitations": ["Binance options requires a specific option symbol for mark data."],
+        "cost_hints": {"latency_class": "medium"},
+    },
+    {
+        "name": "blockspace_mev",
+        "description": "Blockspace + MEV-Boost stats with gas oracle data.",
+        "endpoint": "/tools/blockspace_mev",
+        "input_model": BlockspaceMevInput,
+        "output_model": BlockspaceMevOutput,
+        "capabilities": ["mev", "blockspace", "gas"],
+        "examples": [{"description": "Ethereum MEV-Boost stats", "arguments": {"chain": "ethereum"}}],
+        "limitations": ["Gas oracle requires ETHERSCAN_API_KEY for ethereum."],
+        "cost_hints": {"latency_class": "fast"},
+    },
+    {
+        "name": "hyperliquid_market",
+        "description": "Hyperliquid market data (funding, OI, orderbook, trades).",
+        "endpoint": "/tools/hyperliquid_market",
+        "input_model": HyperliquidMarketInput,
+        "output_model": HyperliquidMarketOutput,
+        "capabilities": ["derivatives", "perps", "hyperliquid"],
+        "examples": [{"description": "BTC funding + OI", "arguments": {"symbol": "BTC"}}],
+        "limitations": [],
+        "cost_hints": {"latency_class": "fast"},
+    },
+    {
         "name": "onchain_tvl_fees",
         "description": "On-chain DeFi metrics: protocol TVL and fees/revenue from DefiLlama.",
         "endpoint": "/tools/onchain_tvl_fees",
@@ -294,7 +411,7 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "input_model": OnchainDEXLiquidityInput,
         "output_model": OnchainDEXLiquidityOutput,
         "capabilities": ["onchain", "dex", "liquidity"],
-        "examples": [{"description": "ETH/USDC pool liquidity", "arguments": {"pool": "ETH/USDC"}}],
+        "examples": [{"description": "Ethereum top pools", "arguments": {"chain": "ethereum"}}],
         "limitations": ["Supports Uniswap v3 pools via public subgraphs."],
         "cost_hints": {"latency_class": "medium"},
     },
@@ -305,7 +422,7 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "input_model": OnchainGovernanceInput,
         "output_model": OnchainGovernanceOutput,
         "capabilities": ["onchain", "governance", "dao"],
-        "examples": [{"description": "Aave recent proposals", "arguments": {"dao": "aave", "top_k": 5}}],
+        "examples": [{"description": "Aave recent proposals", "arguments": {"snapshot_space": "aave.eth"}}],
         "limitations": ["Tally on-chain data may require TALLY_API_KEY for some DAOs."],
         "cost_hints": {"latency_class": "medium"},
     },
@@ -367,6 +484,59 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "capabilities": ["social", "narrative", "trace", "x/twitter"],
         "examples": [{"description": "Trace a rumor tweet", "arguments": {"text": "Some rumor text"}}],
         "limitations": ["Requires XAI_API_KEY and tool must be enabled in config/tools.yaml."],
+        "cost_hints": {"latency_class": "slow"},
+    },
+    {
+        "name": "price_history",
+        "description": "Historical K-line data with technical indicators (SMA, EMA, RSI, MACD, Bollinger, ATR), statistics (volatility, max drawdown, Sharpe ratio), and support/resistance levels.",
+        "endpoint": "/tools/price_history",
+        "input_model": PriceHistoryInput,
+        "output_model": PriceHistoryOutput,
+        "capabilities": ["market", "technical_analysis", "indicators", "chart", "history"],
+        "examples": [
+            {
+                "description": "Get BTC daily history with indicators",
+                "arguments": {
+                    "symbol": "BTC/USDT",
+                    "interval": "1d",
+                    "lookback_days": 30,
+                    "include_indicators": ["sma", "rsi"]
+                },
+            }
+        ],
+        "limitations": [],
+        "cost_hints": {"latency_class": "medium"},
+    },
+    {
+        "name": "sector_peers",
+        "description": "Sector/peer comparison analysis: get tokens in the same category with market metrics, TVL, fees, and comparative valuation.",
+        "endpoint": "/tools/sector_peers",
+        "input_model": SectorPeersInput,
+        "output_model": SectorPeersOutput,
+        "capabilities": ["market", "sector", "comparison", "peers", "valuation"],
+        "examples": [
+            {
+                "description": "Find DeFi peers for AAVE",
+                "arguments": {"symbol": "AAVE", "limit": 10},
+            }
+        ],
+        "limitations": [],
+        "cost_hints": {"latency_class": "medium"},
+    },
+    {
+        "name": "sentiment_aggregator",
+        "description": "Multi-source sentiment aggregation from Telegram, Twitter/X (Grok), and news. Returns weighted sentiment score, source breakdown, and signals.",
+        "endpoint": "/tools/sentiment_aggregator",
+        "input_model": SentimentAggregatorInput,
+        "output_model": SentimentAggregatorOutput,
+        "capabilities": ["sentiment", "social", "news", "aggregation", "signals"],
+        "examples": [
+            {
+                "description": "Get aggregated sentiment for BTC",
+                "arguments": {"symbol": "BTC", "lookback_hours": 24},
+            }
+        ],
+        "limitations": ["Requires TELEGRAM_SCRAPER_URL and XAI_API_KEY for full coverage."],
         "cost_hints": {"latency_class": "slow"},
     },
 ]
@@ -603,6 +773,15 @@ async def initialize_tools():
         )
     tools["grok_social_trace"] = GrokSocialTraceTool(api_key=xai_api_key)
 
+    # 新增数据工具
+    tools["etf_flows_holdings"] = EtfFlowsHoldingsTool()
+    tools["cex_netflow_reserves"] = CexNetflowReservesTool()
+    tools["lending_liquidation_risk"] = LendingLiquidationRiskTool()
+    tools["stablecoin_health"] = StablecoinHealthTool()
+    tools["options_vol_skew"] = OptionsVolSkewTool()
+    tools["blockspace_mev"] = BlockspaceMevTool()
+    tools["hyperliquid_market"] = HyperliquidMarketTool()
+
     # 链上工具家族（拆分自原 onchain_hub）
     tools["onchain_tvl_fees"] = OnchainTVLFeesTool(defillama_client=defillama)
     tools["onchain_stablecoins_cex"] = OnchainStablecoinsCEXTool(
@@ -617,6 +796,17 @@ async def initialize_tools():
     tools["onchain_token_unlocks"] = OnchainTokenUnlocksTool()
     tools["onchain_activity"] = OnchainActivityTool()
     tools["onchain_contract_risk"] = OnchainContractRiskTool()
+
+    # 工具实例化
+    tools["price_history"] = PriceHistoryTool(binance_client=binance, okx_client=okx)
+    tools["sector_peers"] = SectorPeersTool(coingecko_client=coingecko, defillama_client=defillama)
+    
+    # 情绪聚合工具需要其他工具作为依赖
+    tools["sentiment_aggregator"] = SentimentAggregatorTool(
+        telegram_search_tool=tools["telegram_search"],
+        grok_social_trace_tool=tools["grok_social_trace"],
+        web_research_tool=tools["web_research_search"],
+    )
 
     logger.info("All MCP tools initialized successfully", tools_count=len(tools))
 
@@ -850,6 +1040,125 @@ async def draw_chart(params: DrawChartInput):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/tools/etf_flows_holdings")
+async def etf_flows_holdings(params: EtfFlowsHoldingsInput):
+    """ETF Flows & Holdings 工具"""
+    try:
+        tool = tools["etf_flows_holdings"]
+        if tool is None:
+            raise HTTPException(status_code=503, detail="Tool not initialized")
+
+        result = await tool.execute(params)
+        return result.model_dump() if hasattr(result, "model_dump") else result
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error("etf_flows_holdings error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/tools/cex_netflow_reserves")
+async def cex_netflow_reserves(params: CexNetflowReservesInput):
+    """CEX Netflow & Reserves 工具"""
+    try:
+        tool = tools["cex_netflow_reserves"]
+        if tool is None:
+            raise HTTPException(status_code=503, detail="Tool not initialized")
+
+        result = await tool.execute(params)
+        return result.model_dump() if hasattr(result, "model_dump") else result
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error("cex_netflow_reserves error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/tools/lending_liquidation_risk")
+async def lending_liquidation_risk(params: LendingLiquidationRiskInput):
+    """Lending Liquidation Risk 工具"""
+    try:
+        tool = tools["lending_liquidation_risk"]
+        if tool is None:
+            raise HTTPException(status_code=503, detail="Tool not initialized")
+
+        result = await tool.execute(params)
+        return result.model_dump() if hasattr(result, "model_dump") else result
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error("lending_liquidation_risk error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/tools/stablecoin_health")
+async def stablecoin_health(params: StablecoinHealthInput):
+    """Stablecoin Health 工具"""
+    try:
+        tool = tools["stablecoin_health"]
+        if tool is None:
+            raise HTTPException(status_code=503, detail="Tool not initialized")
+
+        result = await tool.execute(params)
+        return result.model_dump() if hasattr(result, "model_dump") else result
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error("stablecoin_health error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/tools/options_vol_skew")
+async def options_vol_skew(params: OptionsVolSkewInput):
+    """Options Volatility/Skew 工具"""
+    try:
+        tool = tools["options_vol_skew"]
+        if tool is None:
+            raise HTTPException(status_code=503, detail="Tool not initialized")
+
+        result = await tool.execute(params)
+        return result.model_dump() if hasattr(result, "model_dump") else result
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error("options_vol_skew error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/tools/blockspace_mev")
+async def blockspace_mev(params: BlockspaceMevInput):
+    """Blockspace MEV 工具"""
+    try:
+        tool = tools["blockspace_mev"]
+        if tool is None:
+            raise HTTPException(status_code=503, detail="Tool not initialized")
+
+        result = await tool.execute(params)
+        return result.model_dump() if hasattr(result, "model_dump") else result
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error("blockspace_mev error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/tools/hyperliquid_market")
+async def hyperliquid_market(params: HyperliquidMarketInput):
+    """Hyperliquid Market 工具"""
+    try:
+        tool = tools["hyperliquid_market"]
+        if tool is None:
+            raise HTTPException(status_code=503, detail="Tool not initialized")
+
+        result = await tool.execute(params)
+        return result.model_dump() if hasattr(result, "model_dump") else result
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error("hyperliquid_market error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/tools/onchain_tvl_fees")
 async def onchain_tvl_fees(params: OnchainTVLFeesInput):
     """Onchain TVL & Fees 工具"""
@@ -1026,6 +1335,58 @@ async def grok_social_trace(params: GrokSocialTraceInput):
 
 
 # ==================== 异常处理 ====================
+
+
+@app.post("/tools/price_history")
+async def price_history(params: PriceHistoryInput):
+    """Price History 工具"""
+    try:
+        tool = tools["price_history"]
+        if tool is None:
+            raise HTTPException(status_code=503, detail="Tool not initialized")
+
+        result = await tool.execute(params)
+        return result.model_dump() if hasattr(result, "model_dump") else result
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error("price_history error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/tools/sector_peers")
+async def sector_peers(params: SectorPeersInput):
+    """Sector Peers 工具"""
+    try:
+        tool = tools["sector_peers"]
+        if tool is None:
+            raise HTTPException(status_code=503, detail="Tool not initialized")
+
+        result = await tool.execute(params)
+        return result.model_dump() if hasattr(result, "model_dump") else result
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error("sector_peers error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/tools/sentiment_aggregator")
+async def sentiment_aggregator(params: SentimentAggregatorInput):
+    """Sentiment Aggregator 工具"""
+    try:
+        tool = tools["sentiment_aggregator"]
+        if tool is None:
+            raise HTTPException(status_code=503, detail="Tool not initialized")
+
+        result = await tool.execute(params)
+        return result.model_dump() if hasattr(result, "model_dump") else result
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error("sentiment_aggregator error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

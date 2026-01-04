@@ -388,6 +388,39 @@ class OKXClient(BaseDataSource):
 
         return {}, meta
 
+    async def get_option_summary(
+        self,
+        inst_id: Optional[str] = None,
+        underlying: Optional[str] = None,
+        expiry_time: Optional[str] = None,
+    ) -> tuple[Dict[str, Any], SourceMeta]:
+        """
+        获取期权摘要数据（隐含波动率、Greeks 等）
+
+        Args:
+            inst_id: 具体期权合约ID（可选）
+            underlying: 标的资产（如 BTC-USD）
+            expiry_time: 到期时间戳（毫秒，字符串）
+
+        Returns:
+            (期权摘要数据, SourceMeta)
+        """
+        endpoint = "/api/v5/public/option-summary"
+        params: Dict[str, str] = {}
+        if inst_id:
+            params["instId"] = inst_id
+        if underlying:
+            params["uly"] = underlying
+        if expiry_time:
+            params["expTime"] = expiry_time
+
+        return await self.fetch(
+            endpoint=endpoint,
+            params=params,
+            data_type="raw",
+            ttl_seconds=60,
+        )
+
     def normalize_symbol(self, symbol: str, market_type: str = "spot") -> str:
         """
         标准化交易对符号

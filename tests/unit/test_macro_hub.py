@@ -211,8 +211,8 @@ class TestMacroHubTool:
         client.get_upcoming_events.return_value = (
             [
                 {
-                    "event_name": "FOMC Meeting",
-                    "country": "United States",
+                    "event": "FOMC Meeting",
+                    "currency": "USD",
                     "date": "2025-11-20",
                     "time": "14:00",
                     "importance": 3,
@@ -355,7 +355,7 @@ class TestMacroHubTool:
         assert result.data.calendar.days_ahead == 7
         assert result.data.calendar.min_importance == 2
         assert len(result.data.calendar.events) == 1
-        assert result.data.calendar.events[0].event_name == "FOMC Meeting"
+        assert result.data.calendar.events[0].event == "FOMC Meeting"
 
     @pytest.mark.asyncio
     async def test_error_handling(self, tool_basic):

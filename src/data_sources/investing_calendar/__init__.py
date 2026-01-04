@@ -6,13 +6,15 @@ Investing.com 财经日历爬虫
 - 经济数据发布（CPI、非农、GDP等）
 - 财报季关键事件
 """
+import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
 from bs4 import BeautifulSoup
 
-from src.core.models import SourceMeta
+from src.core.models import CalendarEvent, SourceMeta
 from src.core.source_meta import SourceMetaBuilder
 from src.data_sources.base import BaseDataSource
 
@@ -22,7 +24,12 @@ class InvestingCalendarClient(BaseDataSource):
 
     BASE_URL = "https://www.investing.com"
 
-    def __init__(self, redis_client: Optional[Any] = None):
+    def __init__(
+        self,
+        redis_client: Optional[Any] = None,
+        cache_enabled: bool = True,
+        cache_file: Optional[str] = None,
+    ):
         """初始化Investing.com日历客户端（无需API key）"""
         super().__init__(
             name="investing_calendar",
@@ -32,6 +39,9 @@ class InvestingCalendarClient(BaseDataSource):
         )
         # Redis缓存客户端（可选）
         self.redis_client = redis_client
+        # JSON文件缓存配置
+        self.cache_enabled = cache_enabled
+        self.cache_file = cache_file or "cache/calendar_events.json"
 
     def _get_headers(self) -> Dict[str, str]:
         """获取请求头（模拟浏览器）"""
@@ -42,6 +52,224 @@ class InvestingCalendarClient(BaseDataSource):
             "Accept-Language": "en-US,en;q=0.9",
             "Accept-Encoding": "gzip, deflate, br",
             "Referer": "https://www.investing.com/",
+        }
+
+    def _extract_xhr_defaults(self, html: str) -> Dict[str, str]:
+        """从页面 HTML 中提取 XHR 所需的默认参数"""
+        soup = BeautifulSoup(html, "html.parser")
+        timezone = None
+        time_filter = None
+
+        tz_select = soup.find("select", {"id": "timeZone"})
+        if tz_select:
+            selected = tz_select.find("option", selected=True)
+            if selected and selected.get("value"):
+                timezone = selected["value"]
+
+        time_filter_input = soup.find("input", {"name": "timeFilter", "checked": True})
+        if time_filter_input and time_filter_input.get("value"):
+            time_filter = time_filter_input["value"]
+
+        return {
+            "timeZone": timezone or "55",
+            "timeFilter": time_filter or "timeRemain",
+        }
+
+    def _build_xhr_payload(
+        self,
+        date_from: str,
+        date_to: str,
+        min_importance: int,
+        defaults: Dict[str, str],
+    ) -> List[tuple]:
+        """构建 XHR 请求的表单参数"""
+        payload = [
+            ("dateFrom", date_from),
+            ("dateTo", date_to),
+            ("timeZone", defaults.get("timeZone", "55")),
+            ("timeFilter", defaults.get("timeFilter", "timeRemain")),
+            ("currentTab", "custom"),
+            ("submitFilters", "1"),
+            ("limit_from", "0"),
+        ]
+
+        if min_importance:
+            for importance in range(min_importance, 4):
+                payload.append(("importance[]", str(importance)))
+
+        return payload
+
+    async def _fetch_html_with_xhr(
+        self,
+        date_str: str,
+        min_importance: int,
+    ) -> Optional[str]:
+        """使用 XHR 接口拉取经济日历 HTML 片段（快速：2-3秒）"""
+        from src.utils.logger import get_logger
+
+        logger = get_logger(__name__)
+
+        base_url = f"{self.base_url}/economic-calendar/"
+        timeout = httpx.Timeout(20.0)
+        headers = self._get_headers()
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
+                # Step 1: 获取基础页面以提取默认参数
+                defaults = {"timeZone": "55", "timeFilter": "timeRemain"}
+                try:
+                    response = await client.get(base_url)
+                    response.raise_for_status()
+                    base_html = response.text
+                    defaults = self._extract_xhr_defaults(base_html)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch calendar defaults: {e}")
+
+                # Step 2: 构建 POST payload
+                payload = self._build_xhr_payload(
+                    date_from=date_str,
+                    date_to=date_str,
+                    min_importance=min_importance,
+                    defaults=defaults,
+                )
+
+                # Step 3: POST 到 XHR 端点
+                post_headers = {
+                    **headers,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Referer": base_url,
+                    "Origin": self.base_url,
+                }
+
+                response = await client.post(
+                    f"{base_url}Service/getCalendarFilteredData",
+                    data=payload,
+                    headers=post_headers,
+                )
+                response.raise_for_status()
+                raw_text = response.text
+
+                # Step 4: 解析 JSON 响应
+                try:
+                    payload_json = json.loads(raw_text)
+                except json.JSONDecodeError:
+                    logger.warning("XHR calendar response is not JSON")
+                    return None
+
+                html = payload_json.get("data") if isinstance(payload_json, dict) else None
+                if not html:
+                    logger.warning("XHR calendar response missing HTML data")
+                    return None
+
+                # Step 5: 包装 <tr> 片段为完整 table（便于 BeautifulSoup 解析）
+                return f'<table id="economicCalendarData">{html}</table>'
+
+        except Exception as e:
+            logger.error(f"XHR calendar fetch failed for {date_str}: {e}")
+            return None
+
+    async def _fetch_html_with_playwright(self, url: str) -> Optional[str]:
+        """使用 Playwright 获取 HTML（慢速但可靠：5-15秒）"""
+        from playwright.async_api import async_playwright
+        from src.utils.logger import get_logger
+
+        logger = get_logger(__name__)
+
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=["--no-sandbox", "--disable-dev-shm-usage"],  # Docker 友好
+                )
+
+                page = await browser.new_page()
+                await page.set_extra_http_headers(self._get_headers())
+
+                # 导航到页面
+                await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+
+                # 等待经济日历表格加载
+                await page.wait_for_selector(
+                    "table#economicCalendarData, table.genTbl",
+                    timeout=10000,
+                )
+
+                # 等待事件行加载
+                await page.wait_for_selector(
+                    "tr.js-event-item, tr[data-event-datetime]",
+                    timeout=8000,
+                    state="attached",
+                )
+
+                # 获取渲染后的 HTML
+                html = await page.content()
+                await browser.close()
+
+                logger.info(f"Playwright fetched calendar HTML ({len(html)} bytes)")
+                return html
+
+        except Exception as e:
+            logger.error(f"Playwright calendar fetch failed: {e}")
+            return None
+
+    def _load_cache_from_file(self) -> Dict[str, Any]:
+        """加载日期缓存（JSON文件）"""
+        if not self.cache_enabled:
+            return {}
+
+        cache_path = Path(self.cache_file)
+        if not cache_path.exists():
+            return {}
+
+        from src.utils.logger import get_logger
+
+        logger = get_logger(__name__)
+
+        try:
+            with cache_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+        except Exception as e:
+            logger.warning(f"Failed to load calendar cache: {e}")
+
+        return {}
+
+    def _save_cache_to_file(self, cache: Dict[str, Any]) -> None:
+        """保存日期缓存（JSON文件）"""
+        if not self.cache_enabled:
+            return
+
+        cache_path = Path(self.cache_file)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+        from src.utils.logger import get_logger
+
+        logger = get_logger(__name__)
+
+        try:
+            with cache_path.open("w", encoding="utf-8") as f:
+                json.dump(cache, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.warning(f"Failed to save calendar cache: {e}")
+
+    def _get_cached_events_from_file(
+        self, cache: Dict[str, Any], date_str: str
+    ) -> List[CalendarEvent]:
+        """从文件缓存读取指定日期的事件列表"""
+        cached = cache.get(date_str, {})
+        events_data = cached.get("events", [])
+        if not isinstance(events_data, list):
+            return []
+        return [CalendarEvent(**item) for item in events_data]
+
+    def _update_cache_in_file(
+        self, cache: Dict[str, Any], date_str: str, events: List[CalendarEvent]
+    ) -> None:
+        """更新指定日期的文件缓存"""
+        cache[date_str] = {
+            "fetched_at": datetime.utcnow().isoformat(),
+            "events": [event.model_dump() for event in events],
         }
 
     async def fetch_raw(
@@ -407,7 +635,14 @@ class InvestingCalendarClient(BaseDataSource):
         self, days: int = 7, min_importance: int = 2
     ) -> tuple[List[Dict], SourceMeta]:
         """
-        获取未来N天的重要事件
+        获取未来N天的重要事件 (XHR-first + dual caching)
+
+        新策略:
+        - XHR-first for speed (2-3s vs 5-15s)
+        - Playwright fallback for reliability
+        - Dual caching: Redis + JSON file
+        - Per-date cache with smart TTL
+        - Error isolation: single day failure doesn't break entire query
 
         Args:
             days: 未来天数
@@ -416,36 +651,136 @@ class InvestingCalendarClient(BaseDataSource):
         Returns:
             (事件列表, SourceMeta)
         """
-        # 获取今天到未来days天的日历
-        today = datetime.utcnow()
-        end_date = today + timedelta(days=days)
+        from src.utils.logger import get_logger
 
-        # Investing.com一次只能查询一天，所以需要循环查询
+        logger = get_logger(__name__)
+
         all_events = []
-        meta = None
+        today = datetime.utcnow().date()
+
+        # 加载 JSON 文件缓存
+        file_cache = self._load_cache_from_file()
+        cache_dirty = False
 
         for i in range(days + 1):
             query_date = today + timedelta(days=i)
             date_str = query_date.strftime("%Y-%m-%d")
+            is_today = query_date == today
+
+            # 确定缓存 key 和 TTL
+            cache_key = f"calendar:{date_str}:{min_importance}"
+            ttl = 600 if is_today else 21600  # 今天10分钟，未来6小时
 
             try:
-                data, meta = await self.get_economic_calendar(
-                    date=date_str, importance=min_importance
+                events: List[Dict] = []
+
+                # Step 1: 尝试 Redis 缓存
+                if self.redis_client and not is_today:
+                    try:
+                        cached = await self.redis_client.get(cache_key)
+                        if cached:
+                            events = json.loads(cached)
+                            logger.info(f"Redis cache hit for {date_str}")
+                    except Exception as e:
+                        logger.warning(f"Redis read failed for {date_str}: {e}")
+
+                # Step 2: 尝试文件缓存（如果 Redis 未命中且不是今天）
+                if not events and not is_today:
+                    cached_events = self._get_cached_events_from_file(file_cache, date_str)
+                    if cached_events:
+                        events = [e.model_dump() for e in cached_events]
+                        logger.info(f"File cache hit for {date_str}")
+
+                # Step 3: 如果缓存未命中或者是今天，则拉取新数据
+                if not events or is_today:
+                    # 3a. 尝试 XHR（快速：2-3秒）
+                    html = await self._fetch_html_with_xhr(
+                        date_str=date_str,
+                        min_importance=min_importance,
+                    )
+
+                    # 3b. XHR 失败时回退到 Playwright（慢速：5-15秒）
+                    if not html:
+                        logger.warning(f"XHR failed for {date_str}, falling back to Playwright")
+                        url_date = date_str.replace("-", "/")
+                        url = f"{self.base_url}/economic-calendar/"
+                        url += f"?timeFrom={url_date}&timeTo={url_date}"
+                        if min_importance:
+                            url += f"&importance={min_importance}"
+
+                        html = await self._fetch_html_with_playwright(url)
+
+                    # 3c. 解析 HTML
+                    if html:
+                        parsed = self._parse_calendar(html)
+                        parsed_events = parsed.get("events", [])
+
+                        # 转换为 CalendarEvent 对象
+                        calendar_events = []
+                        for evt_dict in parsed_events:
+                            try:
+                                evt_dict["date"] = date_str
+                                cal_event = CalendarEvent(**evt_dict)
+                                calendar_events.append(cal_event)
+                            except Exception as e:
+                                logger.warning(f"Failed to create CalendarEvent: {e}")
+                                continue
+
+                        events = [e.model_dump() for e in calendar_events]
+
+                        # 更新缓存
+                        if self.redis_client:
+                            try:
+                                await self.redis_client.setex(
+                                    cache_key, ttl, json.dumps(events)
+                                )
+                            except Exception as e:
+                                logger.warning(f"Redis write failed: {e}")
+
+                        # 更新文件缓存
+                        self._update_cache_in_file(file_cache, date_str, calendar_events)
+                        cache_dirty = True
+                    else:
+                        # 3d. 所有拉取方法都失败，尝试使用旧的文件缓存
+                        if not events:
+                            cached_events = self._get_cached_events_from_file(file_cache, date_str)
+                            if cached_events:
+                                events = [e.model_dump() for e in cached_events]
+                                logger.info(f"Using stale file cache for {date_str}")
+
+                # 应用 importance 过滤
+                filtered_events = [
+                    e for e in events if e.get("importance", 0) >= min_importance
+                ]
+
+                # 确保每个事件都有 date 字段
+                for event in filtered_events:
+                    event["date"] = date_str
+
+                all_events.extend(filtered_events)
+
+                logger.info(
+                    f"Fetched {len(filtered_events)} events for {date_str} "
+                    f"(importance >= {min_importance})"
                 )
-                if data.get("events"):
-                    # 添加日期信息到每个事件
-                    for event in data["events"]:
-                        event["date"] = date_str
-                    all_events.extend(data["events"])
+
             except Exception as e:
-                # 单日查询失败不影响其他日期
+                # 错误隔离：记录错误但继续处理下一天
+                logger.error(f"Failed to fetch calendar for {date_str}: {e}")
                 continue
 
-        return all_events, meta or SourceMetaBuilder.build(
+        # 保存文件缓存（如果有更新）
+        if cache_dirty:
+            self._save_cache_to_file(file_cache)
+
+        # 构建 SourceMeta
+        meta = SourceMetaBuilder.build(
             provider="investing_calendar",
             endpoint="/economic-calendar/",
             ttl_seconds=600,
         )
+
+        return all_events, meta
 
     async def get_central_bank_events(
         self, days: int = 30

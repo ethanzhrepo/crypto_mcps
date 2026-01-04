@@ -54,3 +54,5 @@ poetry.lock
 *.bak
 .cache/
 .env.test
+docker/.env.test
+daily_analyzer

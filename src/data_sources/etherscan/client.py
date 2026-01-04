@@ -18,6 +18,7 @@ class EtherscanClient(BaseDataSource):
     CHAIN_URLS = {
         "ethereum": "https://api.etherscan.io/api",
         "bsc": "https://api.bscscan.com/api",
+        "base": "https://api.basescan.org/api",
         "polygon": "https://api.polygonscan.com/api",
         "arbitrum": "https://api.arbiscan.io/api",
         "optimism": "https://api-optimistic.etherscan.io/api",
@@ -399,6 +400,20 @@ class EtherscanClient(BaseDataSource):
         params = {
             "module": "stats",
             "action": "ethprice",
+        }
+
+        return await self.fetch_raw("", params)
+
+    async def get_gas_oracle(self) -> Dict:
+        """
+        获取Gas价格建议（Etherscan Gas Oracle）
+
+        Returns:
+            Gas价格建议数据
+        """
+        params = {
+            "module": "gastracker",
+            "action": "gasoracle",
         }
 
         return await self.fetch_raw("", params)

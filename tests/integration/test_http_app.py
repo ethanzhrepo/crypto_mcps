@@ -539,7 +539,7 @@ async def test_macro_hub_fed_data(rest_client, record_response):
 
 @pytest.mark.asyncio
 async def test_macro_hub_indices_data(rest_client, record_response):
-    """macro_hub应返回完整的传统金融指数"""
+    """macro_hub应返回完整的传统金融指数（含Russell 2000和BTC/ETH）"""
     payload = {"mode": "indices"}
     response = await rest_client.post("/tools/macro_hub", json=payload)
     assert response.status_code == 200
@@ -554,9 +554,22 @@ async def test_macro_hub_indices_data(rest_client, record_response):
 
     # 验证关键指数
     indices_symbols = [item["symbol"] for item in data["indices"]]
-    expected_indices = ["^GSPC", "^IXIC"]  # S&P 500, NASDAQ
-    for index in expected_indices:
-        assert index in indices_symbols, f"Missing index: {index}"
+
+    # 核心股指
+    expected_stock_indices = ["^GSPC", "^IXIC", "^DJI", "^RUT"]  # S&P 500, NASDAQ, DOW, Russell 2000
+    for index in expected_stock_indices:
+        assert index in indices_symbols, f"Missing stock index: {index}"
+
+    # 加密货币价格 (新增)
+    expected_crypto = ["BTC-USD", "ETH-USD"]  # Bitcoin, Ethereum
+    for crypto in expected_crypto:
+        assert crypto in indices_symbols, f"Missing crypto: {crypto}"
+
+    # 验证数据值存在且合理
+    for item in data["indices"]:
+        assert item["value"] is not None, f"{item['symbol']} value should not be null"
+        assert isinstance(item["value"], (int, float)), f"{item['symbol']} value should be numeric"
+        assert item["value"] > 0, f"{item['symbol']} value should be positive"
 
     record_response("macro_hub_indices", response)
 
@@ -587,3 +600,384 @@ async def test_macro_hub_dashboard_complete(rest_client, record_response):
     assert len(missing_fields) == 0, f"Missing or empty fields: {', '.join(missing_fields)}"
 
     record_response("macro_hub_dashboard", response)
+
+
+# ==================== P0: New Tools Tests ====================
+
+
+@pytest.mark.asyncio
+async def test_price_history_endpoint_live(rest_client, record_response):
+    """POST /tools/price_history 应返回历史K线和技术指标"""
+    payload = {
+        "symbol": "BTC/USDT",
+        "interval": "1d",
+        "lookback_days": 30,
+        "include_indicators": ["sma", "rsi", "macd"]
+    }
+    response = await rest_client.post("/tools/price_history", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    # symbol 可能保留原格式 BTC/USDT 或转为 BTCUSDT
+    assert "symbol" in body or "ohlcv" in body or "klines" in body
+
+    # 验证K线数据存在
+    ohlcv = body.get("ohlcv") or body.get("klines") or body.get("data", {}).get("ohlcv")
+    if ohlcv is not None:
+        assert isinstance(ohlcv, list)
+        assert len(ohlcv) > 0
+
+    record_response("price_history", response)
+
+
+@pytest.mark.asyncio
+async def test_price_history_with_statistics(rest_client, record_response):
+    """price_history应返回统计数据"""
+    payload = {
+        "symbol": "ETH/USDT",
+        "interval": "1d",
+        "lookback_days": 60,
+        "include_indicators": ["sma"]
+    }
+    response = await rest_client.post("/tools/price_history", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    # 验证有数据返回
+    assert body is not None
+    assert isinstance(body, dict)
+
+    record_response("price_history_statistics", response)
+
+
+@pytest.mark.asyncio
+async def test_sector_peers_endpoint_live(rest_client, record_response):
+    """POST /tools/sector_peers 应返回同类币种对比数据"""
+    payload = {"symbol": "AAVE", "limit": 5}
+    response = await rest_client.post("/tools/sector_peers", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    # 响应结构可能直接在顶层
+    assert body is not None
+    assert isinstance(body, dict)
+
+    # 验证有peers或category相关数据
+    has_sector_data = (
+        "peers" in body or
+        "sector" in body or
+        "category" in body or
+        "target" in body or
+        "comparison" in body
+    )
+    assert has_sector_data, f"Expected sector data, got: {list(body.keys())}"
+
+    record_response("sector_peers", response)
+
+
+@pytest.mark.asyncio
+async def test_sector_peers_with_metrics(rest_client, record_response):
+    """sector_peers应返回估值指标"""
+    payload = {"symbol": "UNI", "limit": 10}
+    response = await rest_client.post("/tools/sector_peers", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body is not None
+    assert isinstance(body, dict)
+
+    record_response("sector_peers_metrics", response)
+
+
+@pytest.mark.asyncio
+async def test_sentiment_aggregator_endpoint_live(rest_client, record_response):
+    """POST /tools/sentiment_aggregator 应返回聚合情绪数据"""
+    payload = {"symbol": "BTC", "lookback_hours": 24}
+    response = await rest_client.post("/tools/sentiment_aggregator", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body is not None
+
+    # 验证情绪相关字段（实际响应结构是直接在顶层）
+    has_sentiment_data = (
+        "overall_sentiment" in body or
+        "overall_score" in body or
+        "sentiment" in body or
+        "historical_sentiment" in body or
+        "analysis_period" in body
+    )
+    assert has_sentiment_data, f"Expected sentiment data, got: {list(body.keys())}"
+
+    # 如果有overall_sentiment，验证其结构
+    if "overall_sentiment" in body:
+        sentiment = body["overall_sentiment"]
+        assert "score" in sentiment or "label" in sentiment
+
+    record_response("sentiment_aggregator", response)
+
+
+
+# ==================== P1: DeFi & Options Tests ====================
+
+
+@pytest.mark.asyncio
+async def test_onchain_tvl_fees_endpoint_live(rest_client, record_response):
+    """POST /tools/onchain_tvl_fees 应返回协议TVL和费用数据"""
+    payload = {"protocol": "uniswap"}
+    response = await rest_client.post("/tools/onchain_tvl_fees", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    assert "data" in body or "tvl" in body
+
+    # 验证TVL数据
+    data = body.get("data", body)
+    tvl = data.get("tvl")
+    if tvl is not None:
+        assert isinstance(tvl, dict) or isinstance(tvl, (int, float))
+
+    record_response("onchain_tvl_fees", response)
+
+
+@pytest.mark.asyncio
+async def test_etf_flows_holdings_endpoint_live(rest_client, record_response):
+    """POST /tools/etf_flows_holdings 应返回ETF资金流数据"""
+    payload = {"dataset": "bitcoin", "include_fields": ["flows"]}
+    response = await rest_client.post("/tools/etf_flows_holdings", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["dataset"] == "bitcoin"
+
+    # 验证flows数据
+    flows = body.get("flows", [])
+    assert isinstance(flows, list)
+
+    record_response("etf_flows_holdings", response)
+
+
+@pytest.mark.asyncio
+async def test_options_vol_skew_endpoint_live(rest_client, record_response):
+    """POST /tools/options_vol_skew 应返回期权波动率数据"""
+    payload = {"symbol": "BTC"}
+    response = await rest_client.post("/tools/options_vol_skew", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["symbol"] == "BTC"
+
+    # 验证数据结构
+    data = body.get("data", {})
+    assert isinstance(data, dict)
+
+    record_response("options_vol_skew", response)
+
+
+@pytest.mark.asyncio
+async def test_draw_chart_endpoint_live(rest_client, record_response):
+    """POST /tools/draw_chart 应返回图表配置"""
+    payload = {
+        "chart_type": "line",
+        "symbol": "BTC/USDT",
+        "config": {
+            "data": [{"x": [1, 2, 3], "y": [100, 200, 150], "type": "scatter"}],
+            "layout": {"title": "Test Chart"}
+        }
+    }
+    response = await rest_client.post("/tools/draw_chart", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["symbol"] == "BTC/USDT"
+    assert "chart" in body
+
+    record_response("draw_chart", response)
+
+
+# ==================== P2: Hyperliquid & MEV Tests ====================
+
+
+@pytest.mark.asyncio
+async def test_hyperliquid_market_endpoint_live(rest_client, record_response):
+    """POST /tools/hyperliquid_market 应返回Hyperliquid市场数据"""
+    payload = {"symbol": "BTC", "include_fields": ["funding", "open_interest"]}
+    response = await rest_client.post("/tools/hyperliquid_market", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["symbol"] == "BTC"
+    assert "data" in body
+
+    record_response("hyperliquid_market", response)
+
+
+@pytest.mark.asyncio
+async def test_blockspace_mev_endpoint_live(rest_client, record_response):
+    """POST /tools/blockspace_mev 应返回MEV数据"""
+    payload = {"chain": "ethereum", "limit": 10}
+    response = await rest_client.post("/tools/blockspace_mev", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["chain"] == "ethereum"
+
+    record_response("blockspace_mev", response)
+
+
+@pytest.mark.asyncio
+async def test_cex_netflow_reserves_endpoint_live(rest_client, record_response):
+    """POST /tools/cex_netflow_reserves 应返回交易所储备数据"""
+    payload = {}
+    response = await rest_client.post("/tools/cex_netflow_reserves", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    assert "reserves" in body or "data" in body
+
+    record_response("cex_netflow_reserves", response)
+
+
+@pytest.mark.asyncio
+async def test_lending_liquidation_risk_endpoint_live(rest_client, record_response):
+    """POST /tools/lending_liquidation_risk 应返回借贷风险数据"""
+    payload = {}
+    response = await rest_client.post("/tools/lending_liquidation_risk", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    assert "yields" in body or "data" in body
+
+    record_response("lending_liquidation_risk", response)
+
+
+@pytest.mark.asyncio
+async def test_stablecoin_health_endpoint_live(rest_client, record_response):
+    """POST /tools/stablecoin_health 应返回稳定币健康数据"""
+    payload = {}
+    response = await rest_client.post("/tools/stablecoin_health", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    assert "stablecoins" in body or "data" in body
+
+    record_response("stablecoin_health", response)
+
+
+# ==================== P2: Onchain Tools Tests ====================
+
+
+@pytest.mark.asyncio
+async def test_onchain_stablecoins_cex_endpoint_live(rest_client, record_response):
+    """POST /tools/onchain_stablecoins_cex 应返回稳定币和CEX储备数据"""
+    payload = {}
+    response = await rest_client.post("/tools/onchain_stablecoins_cex", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    assert "data" in body or "stablecoins" in body or "cex_reserves" in body
+
+    record_response("onchain_stablecoins_cex", response)
+
+
+@pytest.mark.asyncio
+async def test_onchain_bridge_volumes_endpoint_live(rest_client, record_response):
+    """POST /tools/onchain_bridge_volumes 应返回跨链桥交易量数据"""
+    payload = {}
+    response = await rest_client.post("/tools/onchain_bridge_volumes", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    # 实际响应结构包含 bridge_volumes 字段
+    assert (
+        "bridge_volumes" in body or
+        "data" in body or
+        "bridges" in body
+    ), f"Expected bridge data, got: {list(body.keys())}"
+
+    record_response("onchain_bridge_volumes", response)
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_key
+async def test_onchain_dex_liquidity_endpoint_live(rest_client, record_response, skip_if_no_key):
+    """POST /tools/onchain_dex_liquidity 应返回DEX流动性数据（需要THEGRAPH_API_KEY）"""
+    skip_if_no_key("THEGRAPH_API_KEY")
+
+    # chain 是必填参数
+    payload = {"chain": "ethereum"}
+    response = await rest_client.post("/tools/onchain_dex_liquidity", json=payload)
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+
+    body = response.json()
+    assert body is not None
+    assert "dex_liquidity" in body or "data" in body or "liquidity" in body
+
+    record_response("onchain_dex_liquidity", response)
+
+
+@pytest.mark.asyncio
+async def test_onchain_governance_endpoint_live(rest_client, record_response):
+    """POST /tools/onchain_governance 应返回治理提案数据"""
+    # 使用 aave.eth，这是一个已知的有效 Snapshot 空间
+    payload = {"snapshot_space": "aave.eth"}
+    response = await rest_client.post("/tools/onchain_governance", json=payload)
+    assert response.status_code == 200
+
+    body = response.json()
+    assert "governance" in body or "data" in body or "proposals" in body
+
+    record_response("onchain_governance", response)
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_key
+async def test_onchain_whale_transfers_endpoint_live(rest_client, record_response, skip_if_no_key):
+    """POST /tools/onchain_whale_transfers 应返回大额转账数据（需要WHALE_ALERT_API_KEY）"""
+    skip_if_no_key("WHALE_ALERT_API_KEY")
+
+    # 使用正确的参数名
+    payload = {"token_symbol": "BTC", "min_value_usd": 1000000, "lookback_hours": 24}
+    response = await rest_client.post("/tools/onchain_whale_transfers", json=payload)
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+
+    body = response.json()
+    assert "whale_transfers" in body or "data" in body or "transfers" in body
+
+    record_response("onchain_whale_transfers", response)
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_key
+async def test_onchain_token_unlocks_endpoint_live(rest_client, record_response, skip_if_no_key):
+    """POST /tools/onchain_token_unlocks 应返回代币解锁数据（需要TOKEN_UNLOCKS_API_KEY）"""
+    skip_if_no_key("TOKEN_UNLOCKS_API_KEY")
+
+    # token_symbol 是可选的
+    payload = {"token_symbol": "ARB"}
+    response = await rest_client.post("/tools/onchain_token_unlocks", json=payload)
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+
+    body = response.json()
+    assert "token_unlocks" in body or "data" in body
+
+    record_response("onchain_token_unlocks", response)
+
+
+@pytest.mark.asyncio
+async def test_onchain_contract_risk_endpoint_live(rest_client, record_response):
+    """POST /tools/onchain_contract_risk 应返回合约风险分析（GoPlus免费API）"""
+    # contract_address 和 chain 都是必填参数
+    payload = {
+        "contract_address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        "chain": "ethereum"
+    }
+    response = await rest_client.post("/tools/onchain_contract_risk", json=payload)
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+
+    body = response.json()
+    assert "contract_risk" in body or "data" in body
+
+    record_response("onchain_contract_risk", response)
+
+

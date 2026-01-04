@@ -1,4 +1,7 @@
-"""市场微结构工具"""
+"""市场工具模块"""
 from .microstructure import MarketMicrostructureTool
+from .price_history import PriceHistoryTool
+from .sector_peers import SectorPeersTool
 
-__all__ = ["MarketMicrostructureTool"]
+__all__ = ["MarketMicrostructureTool", "PriceHistoryTool", "SectorPeersTool"]
+

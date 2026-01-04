@@ -14,7 +14,19 @@ A unified MCP server for crypto finance and macroeconomic data, providing 8 core
 - `web_research_search` - Web & research search (news, reports, parallel multi-source queries)
 - `grok_social_trace` - X/Twitter social media origin tracing via Grok (origin account, promotion likelihood, deepsearch-based interpretation)
 - `macro_hub` - Macro indicators, Fed data, indices & dashboards
+- `sentiment_aggregator` - Multi-source sentiment aggregation (Telegram, Twitter/Grok, News)
 - `draw_chart` - Chart visualization (Plotly-based)
+
+**Market Extensions:**
+- `etf_flows_holdings` - ETF flows and holdings snapshots (free-first sources)
+- `cex_netflow_reserves` - CEX reserves with optional whale transfer monitoring
+- `lending_liquidation_risk` - Lending yields with optional liquidation data
+- `stablecoin_health` - Stablecoin supply and chain distribution
+- `options_vol_skew` - Options volatility/skew snapshots (Deribit/OKX/Binance)
+- `blockspace_mev` - MEV-Boost and gas oracle stats
+- `hyperliquid_market` - Hyperliquid market data (funding, OI, orderbook, trades)
+- `price_history` - Historical K-line data with indicators and support/resistance
+- `sector_peers` - Sector comparison with market metrics and TVL
 
 **Onchain Analytics Suite:**
 - `onchain_tvl_fees` - Protocol TVL & fees/revenue (DefiLlama)

@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     )
     etherscan_api_key: Optional[str] = Field(default=None, alias="ETHERSCAN_API_KEY")
     bscscan_api_key: Optional[str] = Field(default=None, alias="BSCSCAN_API_KEY")
+    basescan_api_key: Optional[str] = Field(default=None, alias="BASESCAN_API_KEY")
     polygonscan_api_key: Optional[str] = Field(default=None, alias="POLYGONSCAN_API_KEY")
     arbiscan_api_key: Optional[str] = Field(default=None, alias="ARBISCAN_API_KEY")
     github_token: Optional[str] = Field(default=None, alias="GITHUB_TOKEN")
@@ -63,6 +64,7 @@ class Settings(BaseSettings):
     goplus_api_key: Optional[str] = Field(default=None, alias="GOPLUS_API_KEY")
     goplus_api_secret: Optional[str] = Field(default=None, alias="GOPLUS_API_SECRET")
     tally_api_key: Optional[str] = Field(default=None, alias="TALLY_API_KEY")
+    thegraph_api_key: Optional[str] = Field(default=None, alias="THEGRAPH_API_KEY")
 
     # 合约风险分析提供商配置
     contract_risk_provider: str = Field(default="goplus", alias="CONTRACT_RISK_PROVIDER")
@@ -242,6 +244,7 @@ class ConfigManager:
             "coinmarketcap": self.settings.coinmarketcap_api_key,
             "etherscan": self.settings.etherscan_api_key,
             "bscscan": self.settings.bscscan_api_key,
+            "basescan": self.settings.basescan_api_key,
             "polygonscan": self.settings.polygonscan_api_key,
             "arbiscan": self.settings.arbiscan_api_key,
             "github": self.settings.github_token,
@@ -265,6 +268,8 @@ class ConfigManager:
             "tally": self.settings.tally_api_key,
             # XAI (Grok)
             "xai": self.settings.xai_api_key,
+            # The Graph
+            "thegraph": self.settings.thegraph_api_key,
         }
         return key_mapping.get(provider.lower())
 

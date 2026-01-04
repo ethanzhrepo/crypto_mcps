@@ -364,6 +364,25 @@ class RateLimiterRegistry:
             requests_per_second=5,  # DefiLlama没有明确限制，保守配置
             requests_per_minute=150,
         ),
+        "hyperliquid": RateLimitConfig(
+            requests_per_second=5,
+            requests_per_minute=300,
+            burst_size=10,
+        ),
+        "flashbots": RateLimitConfig(
+            requests_per_second=2,
+            requests_per_minute=60,
+            burst_size=5,
+        ),
+        "binance_options": RateLimitConfig(
+            requests_per_second=5,
+            requests_per_minute=300,
+            burst_size=10,
+        ),
+        "farside": RateLimitConfig(
+            requests_per_minute=30,
+            burst_size=3,
+        ),
         "cryptopanic": RateLimitConfig(
             requests_per_minute=60,  # 免费版限制
             requests_per_day=3000,  # 免费版每天3000次

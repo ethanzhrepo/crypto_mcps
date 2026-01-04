@@ -6,7 +6,12 @@ The Graph API客户端
 - Tick分布
 - 交易量统计
 - 费用收入
+
+注意：TheGraph 托管服务已于 2024 年废弃，现在需要使用去中心化网关 + API Key。
+免费额度：100,000 queries/month
+申请 API Key: https://thegraph.com/studio/
 """
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -17,18 +22,26 @@ from src.data_sources.base import BaseDataSource
 
 
 class TheGraphClient(BaseDataSource):
-    """The Graph子图查询客户端"""
+    """The Graph子图查询客户端（使用去中心化网关）"""
 
-    # 公共子图端点
-    SUBGRAPH_ENDPOINTS = {
-        "uniswap_v3_ethereum": "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3",
-        "uniswap_v3_arbitrum": "https://api.thegraph.com/subgraphs/name/ianlapham/uniswap-arbitrum-one",
-        "uniswap_v3_optimism": "https://api.thegraph.com/subgraphs/name/ianlapham/optimism-post-regenesis",
-        "uniswap_v3_polygon": "https://api.thegraph.com/subgraphs/name/ianlapham/uniswap-v3-polygon",
-        "uniswap_v2": "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v2",
-        "aave_v3": "https://api.thegraph.com/subgraphs/name/aave/protocol-v3",
-        "compound_v2": "https://api.thegraph.com/subgraphs/name/graphprotocol/compound-v2",
-        "curve": "https://api.thegraph.com/subgraphs/name/messari/curve-finance-ethereum",
+    # 去中心化网关基础 URL
+    GATEWAY_BASE = "https://gateway.thegraph.com/api"
+
+    # Subgraph IDs（去中心化网络）
+    # 查找更多: https://thegraph.com/explorer
+    SUBGRAPH_IDS = {
+        # Uniswap V3
+        "uniswap_v3_ethereum": "5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV",
+        "uniswap_v3_arbitrum": "FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM",
+        "uniswap_v3_optimism": "Cghf4LfVqPiFw6fp6Y5X5Ubc8UpmUhSfJL82zwiBFLaj",
+        "uniswap_v3_polygon": "3hCPRGf4z88VC5rsBKU5AA9FBBq5nF3jbKJG7VZCbhjm",
+        "uniswap_v3_base": "43Hwfi3dJSoGpyas9VwXc7PJzOBWsxpPL7JHuShSEmNT",
+        # Uniswap V2
+        "uniswap_v2": "EYCKATKGBKLseI4RftkH559PcvYA6JJzY5dXNbWYzhgq",
+        # Aave V3
+        "aave_v3_ethereum": "Cd2gEDVeqnjBn1hSeqFMitw8Q1iiyV9FYUZkLNRcL87g",
+        # Curve
+        "curve_ethereum": "3fy93eAT56UJsRCLfHDmrJZi4mpAz3pSyLmUVjrN1zr9",
     }
 
     def __init__(self, api_key: Optional[str] = None):
@@ -36,22 +49,47 @@ class TheGraphClient(BaseDataSource):
         初始化The Graph客户端
 
         Args:
-            api_key: The Graph API密钥（可选，使用免费公共端点则不需要）
+            api_key: The Graph API密钥（必需，从 THEGRAPH_API_KEY 环境变量读取）
         """
         super().__init__(
             name="thegraph",
-            base_url="https://api.thegraph.com",
+            base_url=self.GATEWAY_BASE,
             timeout=15.0,
-            requires_api_key=False,
+            requires_api_key=True,  # 现在需要 API Key
         )
-        self.api_key = api_key
+        self.api_key = api_key or os.environ.get("THEGRAPH_API_KEY")
+        if not self.api_key:
+            import structlog
+            structlog.get_logger().warning(
+                "TheGraph API key not configured",
+                hint="Set THEGRAPH_API_KEY environment variable. Free tier: 100K queries/month."
+            )
+
+    def _get_subgraph_url(self, subgraph_key: str) -> str:
+        """
+        获取子图的完整 URL
+
+        Args:
+            subgraph_key: 子图键名，如 'uniswap_v3_ethereum'
+
+        Returns:
+            完整的 GraphQL 端点 URL
+        """
+        subgraph_id = self.SUBGRAPH_IDS.get(subgraph_key)
+        if not subgraph_id:
+            raise ValueError(f"Unknown subgraph: {subgraph_key}")
+
+        if not self.api_key:
+            raise ValueError(
+                "TheGraph API key required. Set THEGRAPH_API_KEY environment variable. "
+                "Free tier: 100K queries/month. Get API key at: https://thegraph.com/studio/"
+            )
+
+        return f"{self.GATEWAY_BASE}/{self.api_key}/subgraphs/id/{subgraph_id}"
 
     def _get_headers(self) -> Dict[str, str]:
         """获取请求头"""
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        return headers
+        return {"Content-Type": "application/json"}
 
     async def fetch_raw(self, endpoint: str, params: Optional[Dict] = None, base_url_override: Optional[str] = None, headers: Optional[Dict[str, str]] = None) -> Any:
         """获取原始数据（实现基类抽象方法）"""
@@ -113,9 +151,10 @@ class TheGraphClient(BaseDataSource):
         Returns:
             (池子数据, SourceMeta)
         """
-        subgraph = self.SUBGRAPH_ENDPOINTS.get(
-            f"uniswap_v3_{chain}", self.SUBGRAPH_ENDPOINTS["uniswap_v3_ethereum"]
-        )
+        subgraph_key = f"uniswap_v3_{chain}"
+        if subgraph_key not in self.SUBGRAPH_IDS:
+            subgraph_key = "uniswap_v3_ethereum"
+        subgraph = self._get_subgraph_url(subgraph_key)
 
         query = """
         query GetPool($poolId: ID!) {
@@ -184,9 +223,10 @@ class TheGraphClient(BaseDataSource):
         Returns:
             (tick列表, SourceMeta)
         """
-        subgraph = self.SUBGRAPH_ENDPOINTS.get(
-            f"uniswap_v3_{chain}", self.SUBGRAPH_ENDPOINTS["uniswap_v3_ethereum"]
-        )
+        subgraph_key = f"uniswap_v3_{chain}"
+        if subgraph_key not in self.SUBGRAPH_IDS:
+            subgraph_key = "uniswap_v3_ethereum"
+        subgraph = self._get_subgraph_url(subgraph_key)
 
         query = """
         query GetPoolTicks($poolAddress: String!, $skip: Int!, $first: Int!) {
@@ -243,9 +283,10 @@ class TheGraphClient(BaseDataSource):
         Returns:
             (池子列表, SourceMeta)
         """
-        subgraph = self.SUBGRAPH_ENDPOINTS.get(
-            f"uniswap_v3_{chain}", self.SUBGRAPH_ENDPOINTS["uniswap_v3_ethereum"]
-        )
+        subgraph_key = f"uniswap_v3_{chain}"
+        if subgraph_key not in self.SUBGRAPH_IDS:
+            subgraph_key = "uniswap_v3_ethereum"
+        subgraph = self._get_subgraph_url(subgraph_key)
 
         query = """
         query GetPoolsByToken($token: String!, $first: Int!) {
@@ -308,9 +349,10 @@ class TheGraphClient(BaseDataSource):
         Returns:
             (池子列表, SourceMeta)
         """
-        subgraph = self.SUBGRAPH_ENDPOINTS.get(
-            f"uniswap_v3_{chain}", self.SUBGRAPH_ENDPOINTS["uniswap_v3_ethereum"]
-        )
+        subgraph_key = f"uniswap_v3_{chain}"
+        if subgraph_key not in self.SUBGRAPH_IDS:
+            subgraph_key = "uniswap_v3_ethereum"
+        subgraph = self._get_subgraph_url(subgraph_key)
 
         query = """
         query GetTopPools($first: Int!) {

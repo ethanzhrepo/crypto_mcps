@@ -21,6 +21,27 @@ macro_hub:
 draw_chart:
   enabled: true
 
+etf_flows_holdings:
+  enabled: true
+
+cex_netflow_reserves:
+  enabled: true
+
+lending_liquidation_risk:
+  enabled: true
+
+stablecoin_health:
+  enabled: true
+
+options_vol_skew:
+  enabled: true
+
+blockspace_mev:
+  enabled: true
+
+hyperliquid_market:
+  enabled: true
+
 onchain_tvl_fees:
   enabled: true
 
@@ -48,8 +69,19 @@ onchain_activity:
 onchain_contract_risk:
   enabled: true
 
+telegram_search:
+  enabled: true
+
+price_history:
+  enabled: true
+
+sector_peers:
+  enabled: true
+
+sentiment_aggregator:
+  enabled: true
+
 # 新增：Grok 社交媒体溯源工具
 # 默认禁用，需要时手动改为 true
 grok_social_trace:
   enabled: false
-

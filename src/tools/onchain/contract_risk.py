@@ -40,7 +40,7 @@ class OnchainContractRiskTool:
         warnings: list[str] = []
         source_metas: list[SourceMeta] = []
 
-        provider = config.contract_risk_provider.lower()
+        provider = config.settings.contract_risk_provider.lower()
 
         if provider == "slither":
             # 使用 Slither 静态分析

@@ -943,12 +943,12 @@ class DefiLlamaClient(BaseDataSource):
 
         # 获取前10个DEX
         top_dexs = []
-        for proto in sorted(protocols, key=lambda x: x.get("total24h", 0), reverse=True)[:10]:
+        for proto in sorted(protocols, key=lambda x: x.get("total24h") or 0, reverse=True)[:10]:
             top_dexs.append({
                 "name": proto.get("name", "unknown"),
-                "volume_24h": proto.get("total24h", 0),
-                "volume_7d": proto.get("total7d", 0),
-                "change_24h": proto.get("change_1d", 0),
+                "volume_24h": proto.get("total24h") or 0,
+                "volume_7d": proto.get("total7d") or 0,
+                "change_24h": proto.get("change_1d") or 0,
                 "chains": proto.get("chains", []),
             })
 

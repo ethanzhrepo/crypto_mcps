@@ -13,6 +13,13 @@ from mcp.server.stdio import stdio_server
 from src.core.data_source_registry import registry
 from src.core.models import (
     CryptoOverviewInput,
+    EtfFlowsHoldingsInput,
+    CexNetflowReservesInput,
+    LendingLiquidationRiskInput,
+    StablecoinHealthInput,
+    OptionsVolSkewInput,
+    BlockspaceMevInput,
+    HyperliquidMarketInput,
     DerivativesHubInput,
     DrawChartInput,
     GrokSocialTraceInput,
@@ -29,6 +36,10 @@ from src.core.models import (
     OnchainWhaleTransfersInput,
     TelegramSearchInput,
     WebResearchInput,
+    # 新增工具模型
+    PriceHistoryInput,
+    SectorPeersInput,
+    SentimentAggregatorInput,
 )
 from src.data_sources.binance import BinanceClient
 from src.data_sources.coingecko.client import CoinGeckoClient
@@ -46,11 +57,18 @@ from src.data_sources.thegraph import TheGraphClient
 from src.data_sources.yfinance import YahooFinanceClient
 from src.middleware.cache import cache_manager
 from src.tools.chart import DrawChartTool
+from src.tools.blockspace_mev import BlockspaceMevTool
+from src.tools.cex_netflow_reserves import CexNetflowReservesTool
 from src.tools.crypto.overview import crypto_overview_tool
 from src.tools.derivatives import DerivativesHubTool
+from src.tools.etf_flows_holdings import EtfFlowsHoldingsTool
 from src.tools.grok_social_trace import GrokSocialTraceTool
+from src.tools.hyperliquid_market import HyperliquidMarketTool
+from src.tools.lending_liquidation_risk import LendingLiquidationRiskTool
 from src.tools.macro import MacroHubTool
-from src.tools.market import MarketMicrostructureTool
+from src.tools.market import MarketMicrostructureTool, PriceHistoryTool, SectorPeersTool
+from src.tools.sentiment import SentimentAggregatorTool
+from src.tools.options_vol_skew import OptionsVolSkewTool
 from src.tools.onchain.activity import OnchainActivityTool
 from src.tools.onchain.bridge_volumes import OnchainBridgeVolumesTool
 from src.tools.onchain.contract_risk import OnchainContractRiskTool
@@ -60,6 +78,7 @@ from src.tools.onchain.stablecoins_cex import OnchainStablecoinsCEXTool
 from src.tools.onchain.token_unlocks import OnchainTokenUnlocksTool
 from src.tools.onchain.tvl_fees import OnchainTVLFeesTool
 from src.tools.onchain.whale_transfers import OnchainWhaleTransfersTool
+from src.tools.stablecoin_health import StablecoinHealthTool
 from src.tools.telegram_search import TelegramSearchTool
 from src.tools.web_research import WebResearchTool
 from src.utils.config import config
@@ -81,6 +100,13 @@ class MCPServer:
         self.macro_hub_tool = None
         self.draw_chart_tool = None
         self.grok_social_trace_tool = None
+        self.etf_flows_holdings_tool = None
+        self.cex_netflow_reserves_tool = None
+        self.lending_liquidation_risk_tool = None
+        self.stablecoin_health_tool = None
+        self.options_vol_skew_tool = None
+        self.blockspace_mev_tool = None
+        self.hyperliquid_market_tool = None
         # 链上工具（拆分自原 onchain_hub）
         self.onchain_tvl_fees_tool = None
         self.onchain_stablecoins_cex_tool = None
@@ -91,6 +117,10 @@ class MCPServer:
         self.onchain_token_unlocks_tool = None
         self.onchain_activity_tool = None
         self.onchain_contract_risk_tool = None
+        # 新增工具
+        self.price_history_tool = None
+        self.sector_peers_tool = None
+        self.sentiment_aggregator_tool = None
 
     async def initialize(self):
         """初始化服务器"""
@@ -239,6 +269,14 @@ class MCPServer:
         # Grok 社交媒体溯源工具（仅在配置启用时可被调用）
         xai_api_key = os.getenv("XAI_API_KEY")
         self.grok_social_trace_tool = GrokSocialTraceTool(api_key=xai_api_key)
+        # 新增数据工具
+        self.etf_flows_holdings_tool = EtfFlowsHoldingsTool()
+        self.cex_netflow_reserves_tool = CexNetflowReservesTool()
+        self.lending_liquidation_risk_tool = LendingLiquidationRiskTool()
+        self.stablecoin_health_tool = StablecoinHealthTool()
+        self.options_vol_skew_tool = OptionsVolSkewTool()
+        self.blockspace_mev_tool = BlockspaceMevTool()
+        self.hyperliquid_market_tool = HyperliquidMarketTool()
 
         # 链上数据工具家族（拆分自原 onchain_hub）
         self.onchain_tvl_fees_tool = OnchainTVLFeesTool(defillama_client=defillama)
@@ -256,6 +294,21 @@ class MCPServer:
         self.onchain_token_unlocks_tool = OnchainTokenUnlocksTool()
         self.onchain_activity_tool = OnchainActivityTool()
         self.onchain_contract_risk_tool = OnchainContractRiskTool()
+
+        # 新增工具初始化
+        self.price_history_tool = PriceHistoryTool(
+            binance_client=binance,
+            okx_client=okx,
+        )
+        self.sector_peers_tool = SectorPeersTool(
+            coingecko_client=coingecko,
+            defillama_client=defillama,
+        )
+        self.sentiment_aggregator_tool = SentimentAggregatorTool(
+            telegram_search_tool=self.telegram_search_tool,
+            grok_social_trace_tool=self.grok_social_trace_tool,
+            web_research_tool=self.web_research_tool,
+        )
 
         # CoinMarketCap
         cmc_key = config.get_api_key("coinmarketcap")
@@ -806,6 +859,57 @@ class MCPServer:
                 "Trace the origin of a circulating message on X/Twitter using Grok, assess whether it is likely promotional, and provide deepsearch-based social analysis.",
                 GrokSocialTraceInput,
             )
+            add_tool(
+                "etf_flows_holdings",
+                "ETF flows and holdings data (free-first sources like Farside).",
+                EtfFlowsHoldingsInput,
+            )
+            add_tool(
+                "cex_netflow_reserves",
+                "CEX reserves and optional whale transfer monitoring.",
+                CexNetflowReservesInput,
+            )
+            add_tool(
+                "lending_liquidation_risk",
+                "Lending yield snapshots with optional liquidation data.",
+                LendingLiquidationRiskInput,
+            )
+            add_tool(
+                "stablecoin_health",
+                "Stablecoin supply and chain distribution snapshots.",
+                StablecoinHealthInput,
+            )
+            add_tool(
+                "options_vol_skew",
+                "Options volatility/skew snapshots from Deribit/OKX/Binance.",
+                OptionsVolSkewInput,
+            )
+            add_tool(
+                "blockspace_mev",
+                "Blockspace and MEV-Boost stats with gas oracle data.",
+                BlockspaceMevInput,
+            )
+            add_tool(
+                "hyperliquid_market",
+                "Hyperliquid market data (funding, OI, orderbook, trades).",
+                HyperliquidMarketInput,
+            )
+            # 新增工具
+            add_tool(
+                "price_history",
+                "Historical K-line data with technical indicators (SMA, EMA, RSI, MACD, Bollinger, ATR), statistics (volatility, max drawdown, Sharpe ratio), and support/resistance levels.",
+                PriceHistoryInput,
+            )
+            add_tool(
+                "sector_peers",
+                "Sector/peer comparison analysis: get tokens in the same category with market metrics, TVL, fees, and comparative valuation.",
+                SectorPeersInput,
+            )
+            add_tool(
+                "sentiment_aggregator",
+                "Multi-source sentiment aggregation from Telegram, Twitter/X (Grok), and news. Returns weighted sentiment score, source breakdown, and signals.",
+                SentimentAggregatorInput,
+            )
 
             return tools
 
@@ -913,6 +1017,41 @@ class MCPServer:
                     result = await self.onchain_contract_risk_tool.execute(input_params)
                     return [{"type": "text", "text": result.model_dump_json(indent=2)}]
 
+                elif name == "etf_flows_holdings":
+                    input_params = EtfFlowsHoldingsInput(**arguments)
+                    result = await self.etf_flows_holdings_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "cex_netflow_reserves":
+                    input_params = CexNetflowReservesInput(**arguments)
+                    result = await self.cex_netflow_reserves_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "lending_liquidation_risk":
+                    input_params = LendingLiquidationRiskInput(**arguments)
+                    result = await self.lending_liquidation_risk_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "stablecoin_health":
+                    input_params = StablecoinHealthInput(**arguments)
+                    result = await self.stablecoin_health_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "options_vol_skew":
+                    input_params = OptionsVolSkewInput(**arguments)
+                    result = await self.options_vol_skew_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "blockspace_mev":
+                    input_params = BlockspaceMevInput(**arguments)
+                    result = await self.blockspace_mev_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "hyperliquid_market":
+                    input_params = HyperliquidMarketInput(**arguments)
+                    result = await self.hyperliquid_market_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
                 elif name == "grok_social_trace":
                     if not config.is_tool_enabled("grok_social_trace"):
                         return [
@@ -930,6 +1069,22 @@ class MCPServer:
                             "text": result.model_dump_json(indent=2),
                         }
                     ]
+
+                # 新增工具处理
+                elif name == "price_history":
+                    input_params = PriceHistoryInput(**arguments)
+                    result = await self.price_history_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "sector_peers":
+                    input_params = SectorPeersInput(**arguments)
+                    result = await self.sector_peers_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
+
+                elif name == "sentiment_aggregator":
+                    input_params = SentimentAggregatorInput(**arguments)
+                    result = await self.sentiment_aggregator_tool.execute(input_params)
+                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
 
                 else:
                     return [{"type": "text", "text": f"Unknown tool: {name}"}]

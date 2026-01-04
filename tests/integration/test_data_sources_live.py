@@ -441,3 +441,201 @@ class TestWhaleAlertLive:
         )
 
         assert data.total_transfers >= 0
+
+
+# ==================== Yahoo Finance Tests (FREE) ====================
+
+@pytest.mark.live
+@pytest.mark.live_free
+class TestYahooFinanceLive:
+    """Yahoo Finance API真实测试（免费API）"""
+
+    @pytest.mark.asyncio
+    async def test_get_quote_sp500(self):
+        """测试获取S&P 500报价"""
+        from src.data_sources.yfinance import YahooFinanceClient
+
+        client = YahooFinanceClient()
+        data, meta = await client.get_quote("^GSPC")
+
+        assert data is not None
+        assert data.get("symbol") == "^GSPC"
+        assert data.get("price") is not None
+        assert data["price"] > 0
+        assert meta.provider == "yfinance"
+
+    @pytest.mark.asyncio
+    async def test_get_quote_bitcoin(self):
+        """测试获取BTC-USD报价"""
+        from src.data_sources.yfinance import YahooFinanceClient
+
+        client = YahooFinanceClient()
+        data, meta = await client.get_quote("BTC-USD")
+
+        assert data is not None
+        assert data.get("price") is not None
+        assert data["price"] > 0
+
+    @pytest.mark.asyncio
+    async def test_get_market_indices(self):
+        """测试获取主要市场指数"""
+        from src.data_sources.yfinance import YahooFinanceClient
+
+        client = YahooFinanceClient()
+        data, meta = await client.get_market_indices()
+
+        assert data is not None
+        assert "sp500" in data
+        assert "nasdaq" in data
+        assert "russell2000" in data  # 新增
+
+        # 验证SP500数据
+        sp500 = data["sp500"]
+        assert sp500 is not None
+        assert sp500.get("price") is not None
+        assert sp500["price"] > 0
+
+    @pytest.mark.asyncio
+    async def test_get_commodities(self):
+        """测试获取商品数据"""
+        from src.data_sources.yfinance import YahooFinanceClient
+
+        client = YahooFinanceClient()
+        data, meta = await client.get_commodities()
+
+        assert data is not None
+        assert "gold" in data
+        assert "crude_oil" in data
+
+        # 验证黄金数据
+        gold = data["gold"]
+        if gold is not None:
+            assert gold.get("price") is not None
+
+    @pytest.mark.asyncio
+    async def test_get_dollar_index(self):
+        """测试获取美元指数"""
+        from src.data_sources.yfinance import YahooFinanceClient
+
+        client = YahooFinanceClient()
+        data, meta = await client.get_dollar_index()
+
+        assert data is not None
+        assert data.get("price") is not None
+        assert data["price"] > 0
+
+    @pytest.mark.asyncio
+    async def test_get_multiple_quotes(self):
+        """测试批量获取报价"""
+        from src.data_sources.yfinance import YahooFinanceClient
+
+        client = YahooFinanceClient()
+        symbols = ["^GSPC", "^IXIC", "^VIX"]
+        data, meta = await client.get_multiple_quotes(symbols)
+
+        assert data is not None
+        assert isinstance(data, dict)
+        assert len(data) >= 1  # 至少返回一个有效结果
+
+
+# ==================== FRED Tests (Requires Key) ====================
+
+@pytest.mark.live
+@pytest.mark.requires_key
+class TestFREDLive:
+    """FRED API真实测试（需要API密钥）"""
+
+    @pytest.mark.asyncio
+    async def test_get_latest_value_fed_funds(self, skip_if_no_key):
+        """测试获取联邦基金利率"""
+        skip_if_no_key("FRED_API_KEY")
+
+        from src.data_sources.fred import FREDClient
+        import os
+
+        client = FREDClient(api_key=os.getenv("FRED_API_KEY"))
+        result = await client.get_latest_value("DFEDTARU")
+
+        # 返回 (data_dict, SourceMeta) 元组
+        assert result is not None
+        data, meta = result
+        assert "value" in data
+        value = data["value"]
+        assert isinstance(value, (int, float))
+        # 联邦基金利率应该在0-10%之间
+        assert 0 <= value <= 10
+        assert meta.provider == "fred"
+
+    @pytest.mark.asyncio
+    async def test_get_latest_value_cpi(self, skip_if_no_key):
+        """测试获取CPI"""
+        skip_if_no_key("FRED_API_KEY")
+
+        from src.data_sources.fred import FREDClient
+        import os
+
+        client = FREDClient(api_key=os.getenv("FRED_API_KEY"))
+        result = await client.get_latest_value("CPIAUCSL")
+
+        data, meta = result
+        assert "value" in data
+        assert isinstance(data["value"], (int, float))
+
+    @pytest.mark.asyncio
+    async def test_get_series_with_yoy(self, skip_if_no_key):
+        """测试获取YoY数据"""
+        skip_if_no_key("FRED_API_KEY")
+
+        from src.data_sources.fred import FREDClient
+        import os
+
+        client = FREDClient(api_key=os.getenv("FRED_API_KEY"))
+        result = await client.get_series_with_yoy("CPIAUCSL")
+
+        # 返回格式可能是 (value, yoy, meta) 或 ((value, yoy), meta)
+        assert result is not None
+        if len(result) == 2:
+            data, meta = result
+            if isinstance(data, dict):
+                assert "value" in data
+            elif isinstance(data, tuple):
+                value, yoy = data
+                assert isinstance(value, (int, float))
+                assert isinstance(yoy, (int, float))
+
+    @pytest.mark.asyncio
+    async def test_get_treasury_10y(self, skip_if_no_key):
+        """测试获取10年期国债收益率"""
+        skip_if_no_key("FRED_API_KEY")
+
+        from src.data_sources.fred import FREDClient
+        import os
+
+        client = FREDClient(api_key=os.getenv("FRED_API_KEY"))
+        result = await client.get_latest_value("DGS10")
+
+        data, meta = result
+        assert "value" in data
+        value = data["value"]
+        assert isinstance(value, (int, float))
+        # 10年期国债收益率应该在0-15%之间
+        assert 0 <= value <= 15
+
+    @pytest.mark.asyncio
+    async def test_get_unemployment_rate(self, skip_if_no_key):
+        """测试获取失业率"""
+        skip_if_no_key("FRED_API_KEY")
+
+        from src.data_sources.fred import FREDClient
+        import os
+
+        client = FREDClient(api_key=os.getenv("FRED_API_KEY"))
+        result = await client.get_latest_value("UNRATE")
+
+        data, meta = result
+        assert "value" in data
+        value = data["value"]
+        assert isinstance(value, (int, float))
+        # 失业率应该在0-30%之间
+        assert 0 <= value <= 30
+

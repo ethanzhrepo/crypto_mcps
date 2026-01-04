@@ -207,6 +207,7 @@ class YahooFinanceClient:
             self.COMMON_SYMBOLS["sp500"],
             self.COMMON_SYMBOLS["nasdaq"],
             self.COMMON_SYMBOLS["dow"],
+            self.COMMON_SYMBOLS["russell2000"],
             self.COMMON_SYMBOLS["vix"],
         ]
 
@@ -216,6 +217,7 @@ class YahooFinanceClient:
             "sp500": quotes.get(self.COMMON_SYMBOLS["sp500"]),
             "nasdaq": quotes.get(self.COMMON_SYMBOLS["nasdaq"]),
             "dow_jones": quotes.get(self.COMMON_SYMBOLS["dow"]),
+            "russell2000": quotes.get(self.COMMON_SYMBOLS["russell2000"]),
             "vix": quotes.get(self.COMMON_SYMBOLS["vix"]),
         }, meta
 
@@ -291,3 +293,133 @@ class YahooFinanceClient:
             "fear_level": fear_level,
             "indices": indices_data,
         }, meta
+
+    async def get_all_indicators(self) -> Tuple[Dict[str, Any], SourceMeta]:
+        """
+        获取所有指标（用于 MacroRawData 对齐 daily_analyzer）
+
+        Returns:
+            指标字典，键名与 daily_analyzer MacroRawData 字段对应:
+            - 股指: sp500_price, nasdaq_price, dow_price, russell2000_price + 涨跌幅
+            - VIX: vix
+            - 美元: dxy_value, dxy_change_pct
+            - 商品: gold_price, silver_price, crude_oil_price + 涨跌幅
+            - 加密: btc_price, eth_price + 涨跌幅
+        """
+        result = {}
+
+        # === 股指（价格 + 涨跌幅） ===
+        try:
+            sp500_data, meta = await self.get_quote(self.COMMON_SYMBOLS["sp500"])
+            if sp500_data:
+                result["sp500_price"] = sp500_data.get("price")
+                result["sp500_change_pct"] = sp500_data.get("change_percent")
+            else:
+                result["sp500_price"] = None
+                result["sp500_change_pct"] = None
+
+            nasdaq_data, _ = await self.get_quote(self.COMMON_SYMBOLS["nasdaq"])
+            if nasdaq_data:
+                result["nasdaq_price"] = nasdaq_data.get("price")
+                result["nasdaq_change_pct"] = nasdaq_data.get("change_percent")
+            else:
+                result["nasdaq_price"] = None
+                result["nasdaq_change_pct"] = None
+
+            dow_data, _ = await self.get_quote(self.COMMON_SYMBOLS["dow"])
+            if dow_data:
+                result["dow_price"] = dow_data.get("price")
+                result["dow_change_pct"] = dow_data.get("change_percent")
+            else:
+                result["dow_price"] = None
+                result["dow_change_pct"] = None
+
+            russell2000_data, _ = await self.get_quote(self.COMMON_SYMBOLS["russell2000"])
+            if russell2000_data:
+                result["russell2000_price"] = russell2000_data.get("price")
+                result["russell2000_change_pct"] = russell2000_data.get("change_percent")
+            else:
+                result["russell2000_price"] = None
+                result["russell2000_change_pct"] = None
+
+        except Exception as e:
+            logger.error("yfinance_stock_indices_failed", error=str(e))
+
+        # === 波动率 ===
+        try:
+            vix_data, _ = await self.get_quote(self.COMMON_SYMBOLS["vix"])
+            result["vix"] = vix_data.get("price") if vix_data else None
+        except Exception as e:
+            logger.error("yfinance_vix_failed", error=str(e))
+
+        # === 美元指数 ===
+        try:
+            dxy_data, _ = await self.get_quote(self.COMMON_SYMBOLS["dxy"])
+            if dxy_data:
+                result["dxy_value"] = dxy_data.get("price")
+                result["dxy_change_pct"] = dxy_data.get("change_percent")
+            else:
+                result["dxy_value"] = None
+                result["dxy_change_pct"] = None
+        except Exception as e:
+            logger.error("yfinance_dxy_failed", error=str(e))
+
+        # === 大宗商品 ===
+        try:
+            gold_data, _ = await self.get_quote(self.COMMON_SYMBOLS["gold"])
+            if gold_data:
+                result["gold_price"] = gold_data.get("price")
+                result["gold_change_pct"] = gold_data.get("change_percent")
+            else:
+                result["gold_price"] = None
+                result["gold_change_pct"] = None
+
+            silver_data, _ = await self.get_quote(self.COMMON_SYMBOLS["silver"])
+            if silver_data:
+                result["silver_price"] = silver_data.get("price")
+                result["silver_change_pct"] = silver_data.get("change_percent")
+            else:
+                result["silver_price"] = None
+                result["silver_change_pct"] = None
+
+            crude_oil_data, _ = await self.get_quote(self.COMMON_SYMBOLS["crude_oil"])
+            if crude_oil_data:
+                result["crude_oil_price"] = crude_oil_data.get("price")
+                result["crude_oil_change_pct"] = crude_oil_data.get("change_percent")
+            else:
+                result["crude_oil_price"] = None
+                result["crude_oil_change_pct"] = None
+
+        except Exception as e:
+            logger.error("yfinance_commodities_failed", error=str(e))
+
+        # === 加密货币（通过 YFinance） ===
+        try:
+            btc_data, _ = await self.get_quote(self.COMMON_SYMBOLS["btc_usd"])
+            if btc_data:
+                result["btc_price"] = btc_data.get("price")
+                result["btc_change_pct"] = btc_data.get("change_percent")
+            else:
+                result["btc_price"] = None
+                result["btc_change_pct"] = None
+
+            eth_data, _ = await self.get_quote(self.COMMON_SYMBOLS["eth_usd"])
+            if eth_data:
+                result["eth_price"] = eth_data.get("price")
+                result["eth_change_pct"] = eth_data.get("change_percent")
+            else:
+                result["eth_price"] = None
+                result["eth_change_pct"] = None
+
+        except Exception as e:
+            logger.error("yfinance_crypto_failed", error=str(e))
+
+        # 使用最后一个有效的 meta（或构建新的）
+        meta = SourceMetaBuilder.build(
+            provider=self.name,
+            endpoint="get_all_indicators()",
+            ttl_seconds=300,
+        )
+
+        return result, meta
+

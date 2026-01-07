@@ -10,7 +10,7 @@ services:
       - "6380:6379"
     command: redis-server --appendonly no
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 3
@@ -24,7 +24,7 @@ services:
       dockerfile: docker/Dockerfile.test
     container_name: hubrium-mcp-http-server
     ports:
-      - "8001:8000"  # Expose on 8001 to avoid conflict with fin_agent
+      - "8001:8000" # Expose on 8001 to avoid conflict with fin_agent
     env_file:
       - .env.test
     environment:
@@ -34,7 +34,7 @@ services:
       - PYTHONPATH=/app
       - HTTP_HOST=0.0.0.0
       - HTTP_PORT=8000
-      - TELEGRAM_SCRAPER_URL=http://host.docker.internal:8000
+      - TELEGRAM_SCRAPER_URL=https://192.168.1.117
       - TELEGRAM_SCRAPER_INDEX=telegram_messages
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -42,7 +42,7 @@ services:
       redis-test:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -55,7 +55,7 @@ services:
     networks:
       - mcp-test-network
     # Default: run HTTP server (override with pytest for tests)
-    command: ["mcp-server-http"]
+    command: [ "mcp-server-http" ]
 
   # Test runner container that executes pytest against the live HTTP server
   mcp-test-runner:
@@ -76,7 +76,7 @@ services:
       - ./reports:/app/htmlcov
       - ./reports:/app/test-reports
       - ./reports/tmp:/tmp
-    entrypoint: ["pytest"]
+    entrypoint: [ "pytest" ]
 
 volumes:
   test-reports:

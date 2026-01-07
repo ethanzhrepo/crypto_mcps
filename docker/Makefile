@@ -66,10 +66,7 @@ clean: ## Remove test containers and volumes
 clean-prod: ## Remove production containers and volumes
 	docker-compose -f docker-compose.yml down -v --remove-orphans
 
-logs: ## Show test container logs
-	docker-compose -f docker-compose.test.yml logs -f
-
-logs-prod:
+logs:
 	docker-compose -f docker-compose.yml logs -f
 
 shell: ## Open shell in test container

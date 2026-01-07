@@ -38,6 +38,7 @@ A unified MCP server for crypto finance and macroeconomic data, providing 8 core
 - `onchain_token_unlocks` - Token unlock schedules
 - `onchain_activity` - Onchain activity metrics (Etherscan)
 - `onchain_contract_risk` - Contract risk analysis (GoPlus / Slither)
+- `onchain_analytics` - **NEW** On-chain analytics (CryptoQuant): MVRV, SOPR, active addresses, exchange flows, miner data, funding rates
 
 > The original `onchain_hub` has been deprecated and replaced by the granular `onchain_*` tools above.
 

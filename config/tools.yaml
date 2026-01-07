@@ -85,3 +85,7 @@ sentiment_aggregator:
 # 默认禁用，需要时手动改为 true
 grok_social_trace:
   enabled: false
+
+# 新增：CryptoQuant 链上分析工具
+onchain_analytics:
+  enabled: true

@@ -21,6 +21,7 @@ class TelegramScraperClient(BaseDataSource):
         self,
         base_url: str = "http://localhost:8000",
         timeout: float = 15.0,
+        verify_ssl: bool = False,  # 默认禁用 SSL 验证（支持自签名证书）
     ):
         """
         初始化Telegram Scraper客户端
@@ -28,6 +29,7 @@ class TelegramScraperClient(BaseDataSource):
         Args:
             base_url: tel2es FastAPI 服务 URL
             timeout: 请求超时时间（秒）
+            verify_ssl: 是否验证 SSL 证书（默认 False，支持自签名证书）
         """
         super().__init__(
             name="telegram_scraper",
@@ -35,9 +37,11 @@ class TelegramScraperClient(BaseDataSource):
             timeout=timeout,
             requires_api_key=False,
         )
+        self.verify_ssl = verify_ssl
         logger.info(
             "telegram_scraper_client_initialized",
             base_url=base_url,
+            verify_ssl=verify_ssl,
         )
 
     def _get_headers(self) -> Dict[str, str]:
@@ -46,6 +50,20 @@ class TelegramScraperClient(BaseDataSource):
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
+
+    @property
+    def client(self):
+        """获取HTTP客户端（支持禁用 SSL 验证）"""
+        if self._client is None:
+            import httpx
+            self._client = httpx.AsyncClient(
+                base_url=self.base_url,
+                headers=self._get_headers(),
+                timeout=self.timeout,
+                verify=self.verify_ssl,  # 支持自签名证书
+                follow_redirects=True,
+            )
+        return self._client
 
     async def fetch_raw(
         self,

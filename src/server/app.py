@@ -155,6 +155,7 @@ class MCPServer:
         try:
             telegram_scraper_client = TelegramScraperClient(
                 base_url=config.settings.telegram_scraper_url,
+                verify_ssl=False,  # 支持自签名证书
             )
             registry.register("telegram_scraper", telegram_scraper_client)
             logger.info(

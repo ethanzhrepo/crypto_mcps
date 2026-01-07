@@ -197,7 +197,7 @@ class TheGraphClient(BaseDataSource):
         meta = SourceMeta(
             provider="thegraph",
             endpoint=subgraph,
-            fetched_at=datetime.utcnow().isoformat() + "Z",
+            as_of_utc=datetime.utcnow().isoformat() + "Z",
             ttl_seconds=300,  # 5分钟缓存
             cache_hit=False,
         )
@@ -261,7 +261,7 @@ class TheGraphClient(BaseDataSource):
         meta = SourceMeta(
             provider="thegraph",
             endpoint=subgraph,
-            fetched_at=datetime.utcnow().isoformat() + "Z",
+            as_of_utc=datetime.utcnow().isoformat() + "Z",
             ttl_seconds=300,
             cache_hit=False,
         )
@@ -328,7 +328,7 @@ class TheGraphClient(BaseDataSource):
         meta = SourceMeta(
             provider="thegraph",
             endpoint=subgraph,
-            fetched_at=datetime.utcnow().isoformat() + "Z",
+            as_of_utc=datetime.utcnow().isoformat() + "Z",
             ttl_seconds=600,
             cache_hit=False,
         )
@@ -391,7 +391,7 @@ class TheGraphClient(BaseDataSource):
         meta = SourceMeta(
             provider="thegraph",
             endpoint=subgraph,
-            fetched_at=datetime.utcnow().isoformat() + "Z",
+            as_of_utc=datetime.utcnow().isoformat() + "Z",
             ttl_seconds=600,
             cache_hit=False,
         )

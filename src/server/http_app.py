@@ -100,6 +100,7 @@ from src.tools.market.price_history import PriceHistoryTool
 from src.tools.market.sector_peers import SectorPeersTool
 from src.tools.options_vol_skew import OptionsVolSkewTool
 from src.tools.onchain.activity import OnchainActivityTool
+from src.tools.onchain.analytics import OnchainAnalyticsTool
 from src.tools.onchain.bridge_volumes import OnchainBridgeVolumesTool
 from src.tools.onchain.contract_risk import OnchainContractRiskTool
 from src.tools.onchain.dex_liquidity import OnchainDEXLiquidityTool
@@ -144,6 +145,7 @@ tools = {
     "onchain_token_unlocks": None,
     "onchain_activity": None,
     "onchain_contract_risk": None,
+    "onchain_analytics": None,
     "price_history": None,
     "sector_peers": None,
     "sentiment_aggregator": None,
@@ -539,6 +541,26 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "limitations": ["Requires TELEGRAM_SCRAPER_URL and XAI_API_KEY for full coverage."],
         "cost_hints": {"latency_class": "slow"},
     },
+    {
+        "name": "onchain_analytics",
+        "description": "On-chain analytics tool powered by CryptoQuant: MVRV ratio, SOPR, active addresses, exchange flows (reserve/netflow/inflow/outflow), miner data (BTC only), and derivatives funding rates.",
+        "endpoint": "/tools/onchain_analytics",
+        "input_model": None,  # Uses dict input
+        "output_model": None,  # Uses dict output
+        "capabilities": ["onchain", "mvrv", "sopr", "exchange_flows", "miner", "funding_rate", "valuation"],
+        "examples": [
+            {
+                "description": "Get BTC on-chain analytics with MVRV and SOPR",
+                "arguments": {"symbol": "BTC", "include_fields": ["mvrv", "sopr", "exchange_netflow"]},
+            },
+            {
+                "description": "Get all on-chain metrics for ETH",
+                "arguments": {"symbol": "ETH", "include_fields": ["all"]},
+            },
+        ],
+        "limitations": ["Requires CRYPTOQUANT_API_KEY. Miner data is only available for BTC."],
+        "cost_hints": {"latency_class": "medium"},
+    },
 ]
 
 
@@ -622,6 +644,7 @@ async def initialize_data_sources():
     try:
         telegram_scraper_client = TelegramScraperClient(
             base_url=config.settings.telegram_scraper_url,
+            verify_ssl=False,  # 支持自签名证书
         )
         registry.register("telegram_scraper", telegram_scraper_client)
         logger.info(
@@ -796,6 +819,14 @@ async def initialize_tools():
     tools["onchain_token_unlocks"] = OnchainTokenUnlocksTool()
     tools["onchain_activity"] = OnchainActivityTool()
     tools["onchain_contract_risk"] = OnchainContractRiskTool()
+
+    # CryptoQuant 链上分析：需要付费 API key
+    cryptoquant_api_key = config.get_api_key("cryptoquant")
+    if cryptoquant_api_key:
+        tools["onchain_analytics"] = OnchainAnalyticsTool()
+        logger.info("onchain_analytics tool initialized (CryptoQuant API key found)")
+    else:
+        logger.info("onchain_analytics tool skipped (no CRYPTOQUANT_API_KEY)")
 
     # 工具实例化
     tools["price_history"] = PriceHistoryTool(binance_client=binance, okx_client=okx)
@@ -1385,6 +1416,27 @@ async def sentiment_aggregator(params: SentimentAggregatorInput):
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         logger.error("sentiment_aggregator error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/tools/onchain_analytics")
+async def onchain_analytics(request: Request):
+    """On-chain Analytics 工具 (CryptoQuant)
+    
+    提供链上分析指标: MVRV, SOPR, 活跃地址, 交易所流量, 矿工数据, 资金费率
+    """
+    try:
+        tool = tools["onchain_analytics"]
+        if tool is None:
+            raise HTTPException(status_code=503, detail="Tool not initialized")
+
+        params = await request.json()
+        result = await tool.execute(params)
+        return result
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error("onchain_analytics error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 

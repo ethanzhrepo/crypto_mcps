@@ -933,11 +933,11 @@ async def test_onchain_governance_endpoint_live(rest_client, record_response):
 @pytest.mark.asyncio
 @pytest.mark.requires_key
 async def test_onchain_whale_transfers_endpoint_live(rest_client, record_response, skip_if_no_key):
-    """POST /tools/onchain_whale_transfers 应返回大额转账数据（需要WHALE_ALERT_API_KEY）"""
-    skip_if_no_key("WHALE_ALERT_API_KEY")
+    """POST /tools/onchain_whale_transfers 应返回大额转账数据（需要ETHERSCAN_API_KEY）"""
+    skip_if_no_key("ETHERSCAN_API_KEY")
 
     # 使用正确的参数名
-    payload = {"token_symbol": "BTC", "min_value_usd": 1000000, "lookback_hours": 24}
+    payload = {"token_symbol": "ETH", "min_value_usd": 1000000, "lookback_hours": 24}
     response = await rest_client.post("/tools/onchain_whale_transfers", json=payload)
     assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
 

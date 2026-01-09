@@ -153,12 +153,9 @@ def skip_if_no_key():
     return _skip
 
 
-@pytest.fixture(scope="session")
-def event_loop() -> Generator:
-    """创建事件循环"""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+# Removed session-scoped event_loop fixture
+# pytest-asyncio will handle event loop creation per test function
+# This fixes issues with aiohttp in async tests
 
 
 @pytest.fixture

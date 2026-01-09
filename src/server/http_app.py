@@ -701,7 +701,7 @@ async def initialize_data_sources():
     except Exception as e:
         logger.warning(f"Failed to initialize Yahoo Finance client: {e}")
 
-    # Investing.com Calendar (财经日历 - 免费无需key，使用Playwright)
+    # Investing.com Calendar (财经日历 - 免费无需key，使用XHR)
     try:
         # 获取Redis客户端用于calendar缓存
         redis_client = await cache_manager._get_redis()

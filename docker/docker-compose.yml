@@ -9,7 +9,7 @@ services:
       - "6380:6379"
     command: redis-server --appendonly no
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 3
@@ -21,32 +21,25 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: hubrium-mcp-http-server
-    ports:
-      - "8001:8001"
+    network_mode: host
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://127.0.0.1:6380/0
       - ENVIRONMENT=production
       - PYTHONPATH=/app
       - HTTP_HOST=0.0.0.0
       - HTTP_PORT=8001
-      - TELEGRAM_SCRAPER_URL=http://host.docker.internal:8000
     depends_on:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8001/health" ]
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 10s
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - mcp-network
 
 networks:
   mcp-network:
     driver: bridge
-

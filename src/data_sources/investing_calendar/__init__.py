@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import httpx
+import aiohttp
 from bs4 import BeautifulSoup
 
 from src.core.models import CalendarEvent, SourceMeta
@@ -110,17 +110,17 @@ class InvestingCalendarClient(BaseDataSource):
         logger = get_logger(__name__)
 
         base_url = f"{self.base_url}/economic-calendar/"
-        timeout = httpx.Timeout(20.0)
+        timeout = aiohttp.ClientTimeout(total=20)
         headers = self._get_headers()
 
         try:
-            async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
+            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
                 # Step 1: 获取基础页面以提取默认参数
                 defaults = {"timeZone": "55", "timeFilter": "timeRemain"}
                 try:
-                    response = await client.get(base_url)
-                    response.raise_for_status()
-                    base_html = response.text
+                    async with session.get(base_url) as response:
+                        response.raise_for_status()
+                        base_html = await response.text()
                     defaults = self._extract_xhr_defaults(base_html)
                 except Exception as e:
                     logger.warning(f"Failed to fetch calendar defaults: {e}")
@@ -135,19 +135,18 @@ class InvestingCalendarClient(BaseDataSource):
 
                 # Step 3: POST 到 XHR 端点
                 post_headers = {
-                    **headers,
                     "X-Requested-With": "XMLHttpRequest",
                     "Referer": base_url,
                     "Origin": self.base_url,
                 }
 
-                response = await client.post(
+                async with session.post(
                     f"{base_url}Service/getCalendarFilteredData",
                     data=payload,
                     headers=post_headers,
-                )
-                response.raise_for_status()
-                raw_text = response.text
+                ) as response:
+                    response.raise_for_status()
+                    raw_text = await response.text()
 
                 # Step 4: 解析 JSON 响应
                 try:

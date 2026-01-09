@@ -2,7 +2,7 @@
 Live integration tests for InvestingCalendarClient
 
 These tests make real requests to investing.com.
-Run with: pytest tests/integration/test_calendar_live.py -v -s -m integration
+Run with: pytest tests/integration/test_calendar_live.py -v -s -m live
 """
 import pytest
 import time
@@ -12,7 +12,7 @@ from src.data_sources.investing_calendar import InvestingCalendarClient
 from src.core.models import CalendarEvent
 
 
-@pytest.mark.integration
+@pytest.mark.live
 class TestCalendarLiveIntegration:
     """Live integration tests"""
 
@@ -43,33 +43,17 @@ class TestCalendarLiveIntegration:
             print("\n⚠ XHR fetch returned None (may be rate limited)")
 
     @pytest.mark.asyncio
-    async def test_playwright_fetch_live(self, client):
-        """Test live Playwright fetch to investing.com"""
-        today = datetime.utcnow().date()
-        date_str = today.strftime("%Y-%m-%d")
-        url_date = date_str.replace("-", "/")
-        url = f"{client.base_url}/economic-calendar/?timeFrom={url_date}&timeTo={url_date}"
-
-        html = await client._fetch_html_with_playwright(url)
-
-        if html:
-            assert len(html) > 0
-            print(f"\n✓ Playwright fetch successful ({len(html)} bytes)")
-        else:
-            print("\n⚠ Playwright fetch returned None")
-
-    @pytest.mark.asyncio
     async def test_get_upcoming_events_live(self, client):
         """Test full upcoming events flow with real API"""
         print("\n--- Testing get_upcoming_events (live) ---")
 
-        events, meta = await client.get_upcoming_events(days=3, min_importance=2)
+        events, meta = await client.get_upcoming_events(days=7, min_importance=1)
 
         # Validate structure
         assert isinstance(events, list)
         assert meta.provider == "investing_calendar"
 
-        print(f"\nFetched {len(events)} events for next 3 days (importance >= 2)")
+        print(f"\nFetched {len(events)} events for next 7 days (importance >= 1)")
 
         # If events found, validate structure
         if events:
@@ -79,7 +63,7 @@ class TestCalendarLiveIntegration:
             assert "currency" in event_dict
             assert "importance" in event_dict
             assert "event" in event_dict
-            assert event_dict["importance"] >= 2
+            assert event_dict["importance"] >= 1
 
             # Print first few events
             for i, evt in enumerate(events[:5]):
@@ -87,8 +71,13 @@ class TestCalendarLiveIntegration:
                     f"  {i+1}. [{evt['date']} {evt['time']}] "
                     f"{evt['currency']} - {evt['event']} (importance: {evt['importance']})"
                 )
-        else:
-            print("  (No events found - may be weekend or holiday period)")
+
+        # For a 7-day window, we should always have at least some events with importance >= 1
+        # If no events, the calendar fetch is likely broken
+        assert len(events) >= 1, (
+            f"Expected at least 1 event with importance >= 1 in 7-day window, got 0. "
+            "Calendar fetch may be broken."
+        )
 
     @pytest.mark.asyncio
     async def test_cache_persistence(self, client):
@@ -137,9 +126,9 @@ class TestCalendarLiveIntegration:
         if elapsed < 5:
             print("Performance: EXCELLENT (cache hit)")
         elif elapsed < 30:
-            print("Performance: GOOD (XHR-first strategy)")
+            print("Performance: GOOD (XHR strategy)")
         elif elapsed < 60:
-            print("Performance: ACCEPTABLE (some Playwright fallbacks)")
+            print("Performance: ACCEPTABLE (may have retries or slow network)")
         else:
             print("Performance: SLOW (likely rate limited or network issues)")
 
@@ -163,46 +152,6 @@ class TestCalendarLiveIntegration:
         # All events should be high importance
         for evt in events:
             assert evt["importance"] == 3, f"CB event should have importance=3, got {evt['importance']}"
-
-    @pytest.mark.asyncio
-    async def test_xhr_vs_playwright_comparison(self, client):
-        """Compare XHR vs Playwright performance"""
-        print("\n--- Comparing XHR vs Playwright performance ---")
-
-        tomorrow = (datetime.utcnow().date() + timedelta(days=1)).strftime("%Y-%m-%d")
-
-        # Test XHR
-        start_xhr = time.time()
-        xhr_html = await client._fetch_html_with_xhr(tomorrow, min_importance=2)
-        xhr_time = time.time() - start_xhr
-
-        if xhr_html:
-            print(f"\nXHR fetch: {len(xhr_html)} bytes in {xhr_time:.2f}s")
-        else:
-            print(f"\nXHR fetch: FAILED or returned None")
-
-        # Test Playwright
-        url_date = tomorrow.replace("-", "/")
-        url = f"{client.base_url}/economic-calendar/?timeFrom={url_date}&timeTo={url_date}&importance=2"
-
-        start_pw = time.time()
-        pw_html = await client._fetch_html_with_playwright(url)
-        pw_time = time.time() - start_pw
-
-        if pw_html:
-            print(f"Playwright fetch: {len(pw_html)} bytes in {pw_time:.2f}s")
-        else:
-            print(f"Playwright fetch: FAILED or returned None")
-
-        # Compare
-        if xhr_html and pw_html and pw_time > 0:
-            speedup = pw_time / xhr_time
-            print(f"\nXHR speedup: {speedup:.1f}x faster than Playwright")
-            # XHR should generally be 2-5x faster
-            if speedup > 1.5:
-                print("✓ XHR strategy is significantly faster")
-            else:
-                print("⚠ XHR not much faster (may be cached/throttled)")
 
     @pytest.mark.asyncio
     async def test_error_handling_invalid_date(self, client):

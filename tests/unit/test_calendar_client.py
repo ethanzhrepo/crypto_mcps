@@ -264,48 +264,45 @@ class TestInvestingCalendarClient:
         cache_key = f"calendar:{tomorrow}:3"
         client_with_redis.redis_client.get.return_value = json.dumps(cached_events)
 
-        # Mock XHR and Playwright to ensure they're not called
+        # Mock XHR to ensure it's not called (should use cache)
         with patch.object(client_with_redis, "_fetch_html_with_xhr", return_value=None):
-            with patch.object(client_with_redis, "_fetch_html_with_playwright", return_value=None):
-                events, meta = await client_with_redis.get_upcoming_events(days=1, min_importance=3)
+            events, meta = await client_with_redis.get_upcoming_events(days=1, min_importance=3)
 
-                # Should have called Redis get
-                assert client_with_redis.redis_client.get.called
+            # Should have called Redis get
+            assert client_with_redis.redis_client.get.called
 
     # Test 7: Graceful degradation path
     @pytest.mark.asyncio
     async def test_graceful_degradation(self, client):
-        """Test XHR → Playwright → file cache degradation"""
+        """Test XHR → file cache degradation"""
         tomorrow = (datetime.utcnow().date() + timedelta(days=1)).strftime("%Y-%m-%d")
 
         # Fail XHR
         with patch.object(client, "_fetch_html_with_xhr", return_value=None):
-            # Fail Playwright
-            with patch.object(client, "_fetch_html_with_playwright", return_value=None):
-                # Provide file cache
-                with patch.object(client, "_load_cache_from_file") as mock_load:
-                    mock_load.return_value = {
-                        tomorrow: {
-                            "fetched_at": datetime.utcnow().isoformat(),
-                            "events": [
-                                {
-                                    "date": tomorrow,
-                                    "time": "10:00",
-                                    "currency": "USD",
-                                    "importance": 3,
-                                    "event": "Cached Event",
-                                    "actual": None,
-                                    "forecast": None,
-                                    "previous": None,
-                                }
-                            ],
-                        }
+            # Provide file cache
+            with patch.object(client, "_load_cache_from_file") as mock_load:
+                mock_load.return_value = {
+                    tomorrow: {
+                        "fetched_at": datetime.utcnow().isoformat(),
+                        "events": [
+                            {
+                                "date": tomorrow,
+                                "time": "10:00",
+                                "currency": "USD",
+                                "importance": 3,
+                                "event": "Cached Event",
+                                "actual": None,
+                                "forecast": None,
+                                "previous": None,
+                            }
+                        ],
                     }
+                }
 
-                    events, meta = await client.get_upcoming_events(days=1, min_importance=2)
+                events, meta = await client.get_upcoming_events(days=1, min_importance=2)
 
-                    # Should fall back to file cache
-                    assert len(events) >= 0
+                # Should fall back to file cache
+                assert len(events) >= 0
 
     # Test 8: Error isolation (single day failure)
     @pytest.mark.asyncio

@@ -419,28 +419,32 @@ class TestTallyLive:
         assert data.dao is not None
 
 
-# ==================== WhaleAlert Tests (Requires Key) ====================
+# ==================== Etherscan Whale Transfers Tests (Requires Key) ====================
 
 @pytest.mark.live
 @pytest.mark.requires_key
-class TestWhaleAlertLive:
-    """WhaleAlert API真实测试（需要API密钥）"""
+class TestEtherscanWhaleTransfersLive:
+    """Etherscan-based Whale Transfers 真实测试（需要 ETHERSCAN_API_KEY）"""
 
     @pytest.mark.asyncio
-    async def test_get_transactions(self, skip_if_no_key):
-        """测试获取大额转账"""
-        skip_if_no_key("WHALE_ALERT_API_KEY")
+    async def test_whale_transfers_eth(self, skip_if_no_key):
+        """测试获取 ETH 大额转账"""
+        skip_if_no_key("ETHERSCAN_API_KEY")
 
-        from src.data_sources.whale_alert import WhaleAlertClient
-        import os
+        from src.tools.onchain.whale_transfers import OnchainWhaleTransfersTool
 
-        client = WhaleAlertClient(api_key=os.getenv("WHALE_ALERT_API_KEY"))
-        data, meta = await client.get_transactions(
-            min_value=1000000,
-            limit=10
+        tool = OnchainWhaleTransfersTool()
+        from src.core.models import OnchainWhaleTransfersInput
+
+        params = OnchainWhaleTransfersInput(
+            token_symbol="ETH",
+            min_value_usd=1000000,
+            lookback_hours=24,
         )
+        result = await tool.execute(params)
 
-        assert data.total_transfers >= 0
+        assert result.whale_transfers is not None
+        assert result.whale_transfers.token_symbol == "ETH"
 
 
 # ==================== Yahoo Finance Tests (FREE) ====================

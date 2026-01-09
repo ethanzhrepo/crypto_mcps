@@ -21,11 +21,12 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: hubrium-mcp-http-server
-    network_mode: host
+    ports:
+      - "8001:8001"
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://127.0.0.1:6380/0
+      - REDIS_URL=redis://redis:6379/0
       - ENVIRONMENT=production
       - PYTHONPATH=/app
       - HTTP_HOST=0.0.0.0
@@ -39,6 +40,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    networks:
+      - mcp-network
 
 networks:
   mcp-network:

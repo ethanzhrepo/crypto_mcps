@@ -14,9 +14,12 @@
 - `web_research_search` - Web 与研究搜索（新闻、研报、多来源并行查询）
 - `grok_social_trace` - 通过 Grok 对 X/Twitter 的社交传播溯源（源头账号、推广可能性、基于 deepsearch 的解释）
 - `macro_hub` - 宏观指标、Fed 数据、指数与看板
+- `sentiment_aggregator` - 多源情绪聚合（Telegram、Twitter/X、新闻综合分析）
 - `draw_chart` - 图表可视化（基于 Plotly）
 
 **市场扩展工具：**
+- `price_history` - 历史K线与技术指标（SMA、EMA、RSI、MACD、布林带、ATR）及统计分析
+- `sector_peers` - 赛道对比分析（同类代币市场指标、TVL、费用、估值对比）
 - `etf_flows_holdings` - ETF 资金流与持仓快照（免费优先来源）
 - `cex_netflow_reserves` - CEX 储备与大额转账监控
 - `lending_liquidation_risk` - 借贷收益与清算风险
@@ -35,8 +38,25 @@
 - `onchain_token_unlocks` - 代币解锁时间表
 - `onchain_activity` - 链上活跃度指标（Etherscan）
 - `onchain_contract_risk` - 合约风险分析（GoPlus / Slither）
+- `onchain_analytics` - CryptoQuant 链上分析（MVRV、SOPR、活跃地址、交易所流量、矿工数据、资金费率）
 
 > 原 `onchain_hub` 已弃用，并由以上更细粒度的 `onchain_*` 工具替代。
+
+## 📚 API 文档
+
+详细的 HTTP API 文档按工具类别组织：
+
+- [核心工具 API](docs/core_tools_api.zh.md) - 9 个核心工具的详细 API 参考
+- [市场扩展工具 API](docs/market_tools_api.zh.md) - 9 个市场分析工具的详细 API 参考
+- [链上分析工具 API](docs/onchain_tools_api.zh.md) - 10 个链上工具的详细 API 参考
+
+每个文档包含：
+- API 端点定义
+- 请求参数详细说明
+- 响应格式与示例
+- 字段说明与数据解释
+- 错误处理
+- 使用注意事项
 
 ## 🏗️ 架构
 

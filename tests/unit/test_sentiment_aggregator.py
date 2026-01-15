@@ -86,7 +86,7 @@ class TestSentimentAggregatorTool:
     def tool(self, mock_telegram_tool, mock_grok_tool, mock_web_research_tool):
         """创建工具实例"""
         return SentimentAggregatorTool(
-            telegram_search_tool=mock_telegram_tool,
+            crypto_news_search_tool=mock_telegram_tool,
             grok_social_trace_tool=mock_grok_tool,
             web_research_tool=mock_web_research_tool,
         )
@@ -239,7 +239,7 @@ class TestSentimentAggregatorTool:
     async def test_no_sources_available(self):
         """测试无可用数据源"""
         tool = SentimentAggregatorTool(
-            telegram_search_tool=None,
+            crypto_news_search_tool=None,
             grok_social_trace_tool=None,
             web_research_tool=None,
         )

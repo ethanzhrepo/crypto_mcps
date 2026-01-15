@@ -1,18 +1,18 @@
 """
-telegram_search 工具单元测试
+crypto_news_search 工具单元测试
 """
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.core.models import SourceMeta, TelegramSearchInput
+from src.core.models import SourceMeta, CryptoNewsSearchInput
 from src.data_sources.telegram_scraper.client import TelegramScraperClient
-from src.tools.telegram_search import TelegramSearchTool
+from src.tools.crypto_news_search import CryptoNewsSearchTool
 
 
 @pytest.mark.unit
-class TestTelegramSearchTool:
+class TestCryptoNewsSearchTool:
     @pytest.fixture
     def mock_telegram_scraper_client(self):
         client = MagicMock(spec=TelegramScraperClient)
@@ -49,8 +49,8 @@ class TestTelegramSearchTool:
 
     @pytest.mark.asyncio
     async def test_execute_without_client_returns_warning(self):
-        tool = TelegramSearchTool(telegram_scraper_client=None)
-        result = await tool.execute(TelegramSearchInput(query="btc", limit=5))
+        tool = CryptoNewsSearchTool(telegram_scraper_client=None)
+        result = await tool.execute(CryptoNewsSearchInput(query="btc", limit=5))
 
         assert result.total_results == 0
         assert result.source_meta == []
@@ -58,7 +58,7 @@ class TestTelegramSearchTool:
 
     @pytest.mark.asyncio
     async def test_execute_with_client_returns_results(self, mock_telegram_scraper_client):
-        tool = TelegramSearchTool(telegram_scraper_client=mock_telegram_scraper_client)
+        tool = CryptoNewsSearchTool(telegram_scraper_client=mock_telegram_scraper_client)
         result = await tool.execute({"query": "btc", "limit": 2, "sort_by": "score"})
 
         assert result.query == "btc"
@@ -77,7 +77,7 @@ class TestTelegramSearchTool:
 
     @pytest.mark.asyncio
     async def test_time_range_is_converted_to_start_time(self, mock_telegram_scraper_client):
-        tool = TelegramSearchTool(telegram_scraper_client=mock_telegram_scraper_client)
+        tool = CryptoNewsSearchTool(telegram_scraper_client=mock_telegram_scraper_client)
         tool._parse_time_range = MagicMock(return_value=datetime(2025, 1, 2, 3, 4, 5))
 
         await tool.execute({"query": "btc", "time_range": "24h", "limit": 1})
@@ -87,7 +87,7 @@ class TestTelegramSearchTool:
 
     @pytest.mark.asyncio
     async def test_no_query_or_symbol_searches_latest(self, mock_telegram_scraper_client):
-        tool = TelegramSearchTool(telegram_scraper_client=mock_telegram_scraper_client)
+        tool = CryptoNewsSearchTool(telegram_scraper_client=mock_telegram_scraper_client)
 
         result = await tool.execute({"limit": 1})
         assert any("返回最新消息" in w for w in result.warnings)
@@ -98,11 +98,11 @@ class TestTelegramSearchTool:
 
 
 @pytest.mark.unit
-class TestTelegramSearchInput:
+class TestCryptoNewsSearchInput:
     def test_symbol_is_uppercased(self):
-        assert TelegramSearchInput(symbol="btc").symbol == "BTC"
+        assert CryptoNewsSearchInput(symbol="btc").symbol == "BTC"
 
     def test_sort_by_validation(self):
         with pytest.raises(ValueError, match="sort_by must be 'timestamp' or 'score'"):
-            TelegramSearchInput(sort_by="invalid")
+            CryptoNewsSearchInput(sort_by="invalid")
 

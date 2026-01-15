@@ -10,7 +10,7 @@
 - `crypto_overview` - 代币全景概览（基本面、市场指标、供应、持币地址、社媒、赛道、开发活跃度）
 - `market_microstructure` - 市场数据与微观结构分析
 - `derivatives_hub` - 统一的衍生品数据访问入口
-- `telegram_search` - Telegram 消息搜索（基于 Telegram Scraper 的 Elasticsearch）
+- `crypto_news_search` - 加密新闻搜索
 - `web_research_search` - Web 与研究搜索（新闻、研报、多来源并行查询）
 - `grok_social_trace` - 通过 Grok 对 X/Twitter 的社交传播溯源（源头账号、推广可能性、基于 deepsearch 的解释）
 - `macro_hub` - 宏观指标、Fed 数据、指数与看板
@@ -98,7 +98,7 @@ vim docker/.env
 - `COINMARKETCAP_API_KEY`（提供免费档）
 - `ETHERSCAN_API_KEY`（用于持币地址/holder 数据）
 - `GITHUB_TOKEN`（用于开发活跃度，可选）
-- `TELEGRAM_SCRAPER_URL`（用于 `telegram_search`，可选）
+- `TELEGRAM_SCRAPER_URL`（用于 `crypto_news_search`，可选）
 - 链上工具按需添加更多 keys
 
 ### 运行服务
@@ -266,9 +266,9 @@ crypto_mcps/
 - 对于 `grok_social_trace`，需要配置 XAI API Key：
   - 在环境变量或 `docker/.env` 中设置 `XAI_API_KEY=...`
   - stdio 与 HTTP server 都使用该环境变量
-- 对于 `telegram_search`，需要配置 Telegram Scraper URL：
+- 对于 `crypto_news_search`，需要配置 Telegram Scraper URL：
   - 在环境变量或 `docker/.env` 中设置 `TELEGRAM_SCRAPER_URL=...`
-  - 指向可访问的 Telegram Scraper/Elasticsearch 代理服务
+  - 指向可访问的加密新闻搜索后端
 
 ## 🔧 工具使用示例
 

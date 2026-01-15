@@ -34,7 +34,7 @@ from src.core.models import (
     OnchainTVLFeesInput,
     OnchainTokenUnlocksInput,
     OnchainWhaleTransfersInput,
-    TelegramSearchInput,
+    CryptoNewsSearchInput,
     WebResearchInput,
     # 新增工具模型
     PriceHistoryInput,
@@ -79,7 +79,7 @@ from src.tools.onchain.token_unlocks import OnchainTokenUnlocksTool
 from src.tools.onchain.tvl_fees import OnchainTVLFeesTool
 from src.tools.onchain.whale_transfers import OnchainWhaleTransfersTool
 from src.tools.stablecoin_health import StablecoinHealthTool
-from src.tools.telegram_search import TelegramSearchTool
+from src.tools.crypto_news_search import CryptoNewsSearchTool
 from src.tools.web_research import WebResearchTool
 from src.utils.config import config
 from src.utils.logger import get_logger, setup_logging
@@ -96,7 +96,7 @@ class MCPServer:
         self.market_microstructure_tool = None
         self.derivatives_hub_tool = None
         self.web_research_tool = None
-        self.telegram_search_tool = None
+        self.crypto_news_search_tool = None
         self.macro_hub_tool = None
         self.draw_chart_tool = None
         self.grok_social_trace_tool = None
@@ -150,7 +150,7 @@ class MCPServer:
         defillama = DefiLlamaClient()
         registry.register("defillama", defillama)
 
-        # Telegram Scraper (Telegram消息数据)
+        # Telegram Scraper 数据源
         telegram_scraper_client = None
         try:
             telegram_scraper_client = TelegramScraperClient(
@@ -257,7 +257,7 @@ class MCPServer:
             deribit_client=deribit,
         )
         self.web_research_tool = WebResearchTool(search_client=search_client)
-        self.telegram_search_tool = TelegramSearchTool(
+        self.crypto_news_search_tool = CryptoNewsSearchTool(
             telegram_scraper_client=telegram_scraper_client
         )
         self.macro_hub_tool = MacroHubTool(
@@ -306,7 +306,7 @@ class MCPServer:
             defillama_client=defillama,
         )
         self.sentiment_aggregator_tool = SentimentAggregatorTool(
-            telegram_search_tool=self.telegram_search_tool,
+            crypto_news_search_tool=self.crypto_news_search_tool,
             grok_social_trace_tool=self.grok_social_trace_tool,
             web_research_tool=self.web_research_tool,
         )
@@ -836,9 +836,9 @@ class MCPServer:
                 OnchainContractRiskInput,
             )
             add_tool(
-                "telegram_search",
-                "Search Telegram messages (Elasticsearch-backed) via Telegram Scraper.",
-                TelegramSearchInput,
+                "crypto_news_search",
+                "Search crypto news.",
+                CryptoNewsSearchInput,
             )
             add_tool(
                 "web_research_search",
@@ -953,9 +953,9 @@ class MCPServer:
                     result = await self.derivatives_hub_tool.execute(input_params)
                     return [{"type": "text", "text": result.model_dump_json(indent=2)}]
 
-                elif name == "telegram_search":
-                    input_params = TelegramSearchInput(**arguments)
-                    result = await self.telegram_search_tool.execute(input_params)
+                elif name == "crypto_news_search":
+                    input_params = CryptoNewsSearchInput(**arguments)
+                    result = await self.crypto_news_search_tool.execute(input_params)
                     return [{"type": "text", "text": result.model_dump_json(indent=2)}]
 
                 elif name == "web_research_search":

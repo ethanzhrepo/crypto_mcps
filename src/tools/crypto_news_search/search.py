@@ -1,7 +1,7 @@
 """
-telegram_search 工具实现
+crypto_news_search 工具实现
 
-提供 Telegram 消息搜索功能（依赖 TelegramScraperClient / Elasticsearch）。
+提供加密新闻搜索功能。
 """
 import time
 from datetime import datetime, timedelta
@@ -12,27 +12,27 @@ import structlog
 from src.core.models import (
     SearchResult,
     SourceMeta,
-    TelegramSearchInput,
-    TelegramSearchOutput,
+    CryptoNewsSearchInput,
+    CryptoNewsSearchOutput,
 )
 from src.data_sources.telegram_scraper import TelegramScraperClient
 
 logger = structlog.get_logger()
 
 
-class TelegramSearchTool:
-    """telegram_search 工具"""
+class CryptoNewsSearchTool:
+    """crypto_news_search 工具"""
 
     def __init__(self, telegram_scraper_client: Optional[TelegramScraperClient] = None):
         self.telegram_scraper_client = telegram_scraper_client
         logger.info(
-            "telegram_search_tool_initialized",
+            "crypto_news_search_tool_initialized",
             scraper_enabled=bool(telegram_scraper_client),
         )
 
-    async def execute(self, params) -> TelegramSearchOutput:
+    async def execute(self, params) -> CryptoNewsSearchOutput:
         if isinstance(params, dict):
-            params = TelegramSearchInput(**params)
+            params = CryptoNewsSearchInput(**params)
 
         start = time.time()
 
@@ -63,14 +63,14 @@ class TelegramSearchTool:
 
         elapsed = time.time() - start
         logger.info(
-            "telegram_search_execute_complete",
+            "crypto_news_search_execute_complete",
             query=params.query,
             symbol=params.symbol,
             results_count=len(results),
             elapsed_ms=round(elapsed * 1000, 2),
         )
 
-        return TelegramSearchOutput(
+        return CryptoNewsSearchOutput(
             query=params.query,
             symbol=params.symbol,
             results=results,
@@ -105,4 +105,3 @@ class TelegramSearchTool:
             return now - timedelta(days=365)
 
         return None
-

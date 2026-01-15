@@ -174,5 +174,5 @@ web_research:
       enabled: false
       top_n: 30
 
-# Telegram Search 配置（独立工具：telegram_search）
+# Crypto News Search 配置（独立工具：crypto_news_search）
 # - Telegram Scraper 的基础连接配置见 data_source_configs.telegram_scraper

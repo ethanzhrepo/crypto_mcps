@@ -58,8 +58,8 @@ from src.core.models import (
     OnchainTokenUnlocksOutput,
     OnchainWhaleTransfersInput,
     OnchainWhaleTransfersOutput,
-    TelegramSearchInput,
-    TelegramSearchOutput,
+    CryptoNewsSearchInput,
+    CryptoNewsSearchOutput,
     WebResearchInput,
     WebResearchOutput,
     PriceHistoryInput,
@@ -111,7 +111,7 @@ from src.tools.onchain.tvl_fees import OnchainTVLFeesTool
 from src.tools.onchain.whale_transfers import OnchainWhaleTransfersTool
 from src.tools.stablecoin_health import StablecoinHealthTool
 from src.tools.sentiment.aggregator import SentimentAggregatorTool
-from src.tools.telegram_search import TelegramSearchTool
+from src.tools.crypto_news_search import CryptoNewsSearchTool
 from src.tools.web_research import WebResearchTool
 from src.utils.config import config
 from src.utils.logger import get_logger
@@ -124,7 +124,7 @@ tools = {
     "crypto_overview": None,
     "market_microstructure": None,
     "derivatives_hub": None,
-    "telegram_search": None,
+    "crypto_news_search": None,
     "web_research_search": None,
     "macro_hub": None,
     "draw_chart": None,
@@ -237,16 +237,16 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "cost_hints": {"latency_class": "medium"},
     },
     {
-        "name": "telegram_search",
-        "description": "Search Telegram messages (Elasticsearch-backed) via Telegram Scraper",
-        "endpoint": "/tools/telegram_search",
-        "input_model": TelegramSearchInput,
-        "output_model": TelegramSearchOutput,
+        "name": "crypto_news_search",
+        "description": "Search crypto news",
+        "endpoint": "/tools/crypto_news_search",
+        "input_model": CryptoNewsSearchInput,
+        "output_model": CryptoNewsSearchOutput,
         "capabilities": ["telegram", "news", "social", "narrative"],
         "examples": [
             {"description": "Search token mentions", "arguments": {"symbol": "BTC", "limit": 20, "time_range": "24h"}}
         ],
-        "limitations": ["Requires TELEGRAM_SCRAPER_URL pointing to a reachable Telegram Scraper/Elasticsearch proxy."],
+        "limitations": ["Requires TELEGRAM_SCRAPER_URL configured."],
         "cost_hints": {"latency_class": "fast"},
     },
     {
@@ -639,7 +639,7 @@ async def initialize_data_sources():
     defillama = DefiLlamaClient()
     registry.register("defillama", defillama)
 
-    # Telegram Scraper (Telegram消息数据)
+    # Telegram Scraper 数据源
     telegram_scraper_client = None
     try:
         telegram_scraper_client = TelegramScraperClient(
@@ -776,7 +776,7 @@ async def initialize_tools():
         okx_client=okx,
         deribit_client=deribit,
     )
-    tools["telegram_search"] = TelegramSearchTool(telegram_scraper_client=telegram_scraper)
+    tools["crypto_news_search"] = CryptoNewsSearchTool(telegram_scraper_client=telegram_scraper)
     tools["web_research_search"] = WebResearchTool(search_client=search)
     tools["macro_hub"] = MacroHubTool(
         macro_client=macro,
@@ -834,7 +834,7 @@ async def initialize_tools():
     
     # 情绪聚合工具需要其他工具作为依赖
     tools["sentiment_aggregator"] = SentimentAggregatorTool(
-        telegram_search_tool=tools["telegram_search"],
+        crypto_news_search_tool=tools["crypto_news_search"],
         grok_social_trace_tool=tools["grok_social_trace"],
         web_research_tool=tools["web_research_search"],
     )
@@ -1017,11 +1017,11 @@ async def web_research_search(params: WebResearchInput):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/tools/telegram_search")
-async def telegram_search(params: TelegramSearchInput):
-    """Telegram Search 工具"""
+@app.post("/tools/crypto_news_search")
+async def crypto_news_search(params: CryptoNewsSearchInput):
+    """Crypto News Search 工具"""
     try:
-        tool = tools["telegram_search"]
+        tool = tools["crypto_news_search"]
         if tool is None:
             raise HTTPException(status_code=503, detail="Tool not initialized")
 
@@ -1031,7 +1031,7 @@ async def telegram_search(params: TelegramSearchInput):
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        logger.error("telegram_search error", error=str(e))
+        logger.error("crypto_news_search error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 

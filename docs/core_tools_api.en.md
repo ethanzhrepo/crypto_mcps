@@ -296,13 +296,13 @@ curl -X POST http://localhost:8001/tools/derivatives_hub \
 
 ---
 
-### 4. telegram_search - Telegram Search
+### 4. crypto_news_search - Crypto News Search
 
-**Description**: Search Telegram messages (Elasticsearch-backed) via Telegram Scraper
+**Description**: Search crypto news
 
 **Endpoint**
 ```
-POST /tools/telegram_search
+POST /tools/crypto_news_search
 ```
 
 **Request Parameters**
@@ -318,7 +318,7 @@ POST /tools/telegram_search
 
 **Request Example**
 ```bash
-curl -X POST http://localhost:8001/tools/telegram_search \
+curl -X POST http://localhost:8001/tools/crypto_news_search \
   -H "Content-Type: application/json" \
   -d '{
     "symbol": "BTC",
@@ -361,9 +361,9 @@ curl -X POST http://localhost:8001/tools/telegram_search \
 - `query`: Search keyword (if provided)
 - `symbol`: Token symbol (if provided)
 - `results`: Array of search results
-  - `title`: Message title
-  - `url`: Message link
-  - `snippet`: Message snippet
+  - `title`: Result title
+  - `url`: Result link
+  - `snippet`: Result snippet
   - `relevance_score`: Relevance score
   - `published_at`: Publication time
 - `total_results`: Total number of results
@@ -372,11 +372,11 @@ curl -X POST http://localhost:8001/tools/telegram_search \
 
 **Error Responses**
 - 422: Parameter validation error
-- 503: Tool not initialized or Telegram Scraper unreachable
+- 503: Tool not initialized or crypto news backend unreachable
 - 500: Internal service error
 
 **Notes**
-- Requires TELEGRAM_SCRAPER_URL pointing to a reachable Telegram Scraper/Elasticsearch proxy
+- Requires TELEGRAM_SCRAPER_URL configured
 - Latency class: fast
 
 ---
@@ -872,7 +872,7 @@ Tool not initialized or dependent service unavailable.
 
 ```json
 {
-  "detail": "Tool 'telegram_search' is not initialized or disabled"
+  "detail": "Tool 'crypto_news_search' is not initialized or disabled"
 }
 ```
 

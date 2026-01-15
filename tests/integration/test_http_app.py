@@ -14,13 +14,13 @@ from httpx import AsyncClient
 pytestmark = [pytest.mark.integration, pytest.mark.live, pytest.mark.live_free]
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def base_url():
     """从环境变量读取目标HTTP地址，默认指向本地转发端口"""
     return os.getenv("MCP_HTTP_BASE_URL", "http://localhost:8001")
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 async def rest_client(base_url):
     """面向真实HTTP服务器的AsyncClient"""
     async with AsyncClient(base_url=base_url, timeout=60.0) as client:
@@ -287,10 +287,10 @@ async def test_web_research_search_news_with_validation(rest_client, record_resp
 
 
 @pytest.mark.asyncio
-async def test_telegram_search_endpoint_live(rest_client, record_response):
-    """POST /tools/telegram_search 应返回 Telegram 搜索结果（依赖宿主机 Telegram Scraper 服务）"""
+async def test_crypto_news_search_endpoint_live(rest_client, record_response):
+    """POST /tools/crypto_news_search 应返回加密新闻搜索结果（依赖宿主机 Telegram Scraper 服务）"""
     payload = {"query": "btc", "limit": 5, "time_range": "24h"}
-    response = await rest_client.post("/tools/telegram_search", json=payload)
+    response = await rest_client.post("/tools/crypto_news_search", json=payload)
     assert response.status_code == 200
 
     body = response.json()
@@ -311,27 +311,27 @@ async def test_telegram_search_endpoint_live(rest_client, record_response):
         assert "url" in first_result
         assert first_result.get("source")
 
-    record_response("telegram_search", response)
+    record_response("crypto_news_search", response)
 
 
 @pytest.mark.asyncio
-async def test_telegram_search_endpoint_live_requires_results(rest_client, record_response):
-    """POST /tools/telegram_search 必须至少返回1条结果（btc, limit=20）"""
+async def test_crypto_news_search_endpoint_live_requires_results(rest_client, record_response):
+    """POST /tools/crypto_news_search 必须至少返回1条结果（btc, limit=20）"""
     payload = {"query": "btc", "limit": 20, "time_range": "24h"}
-    response = await rest_client.post("/tools/telegram_search", json=payload)
+    response = await rest_client.post("/tools/crypto_news_search", json=payload)
     assert response.status_code == 200
 
     body = response.json()
     results = body.get("results", [])
     assert isinstance(results, list)
-    assert len(results) >= 1, "Expected at least 1 telegram search result for query=btc"
+    assert len(results) >= 1, "Expected at least 1 crypto news search result for query=btc"
 
     first_result = results[0]
     assert first_result.get("title")
     assert "url" in first_result
     assert first_result.get("source")
 
-    record_response("telegram_search_requires_results", response)
+    record_response("crypto_news_search_requires_results", response)
 
 
 @pytest.mark.asyncio
@@ -979,5 +979,3 @@ async def test_onchain_contract_risk_endpoint_live(rest_client, record_response)
     assert "contract_risk" in body or "data" in body
 
     record_response("onchain_contract_risk", response)
-
-

@@ -69,7 +69,7 @@ onchain_activity:
 onchain_contract_risk:
   enabled: true
 
-telegram_search:
+crypto_news_search:
   enabled: true
 
 price_history:

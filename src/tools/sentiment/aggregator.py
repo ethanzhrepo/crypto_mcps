@@ -52,18 +52,18 @@ class SentimentAggregatorTool:
     情绪聚合分析工具
     
     整合多个数据源:
-    - telegram_search: Telegram消息搜索
+    - crypto_news_search: 加密新闻搜索
     - grok_social_trace: X/Twitter分析  
     - web_research_search: 新闻聚合
     """
     
     def __init__(
         self,
-        telegram_search_tool=None,
+        crypto_news_search_tool=None,
         grok_social_trace_tool=None,
         web_research_tool=None,
     ):
-        self.telegram_tool = telegram_search_tool
+        self.crypto_news_tool = crypto_news_search_tool
         self.grok_tool = grok_social_trace_tool
         self.web_research_tool = web_research_tool
         logger.info("sentiment_aggregator_tool_initialized")
@@ -107,7 +107,7 @@ class SentimentAggregatorTool:
         tasks = []
         task_sources = []
         
-        if SentimentSource.TELEGRAM in params.sources and self.telegram_tool:
+        if SentimentSource.TELEGRAM in params.sources and self.crypto_news_tool:
             tasks.append(self._fetch_telegram_sentiment(params.symbol, params.lookback_hours))
             task_sources.append(SentimentSource.TELEGRAM)
         
@@ -192,8 +192,8 @@ class SentimentAggregatorTool:
     ) -> tuple[SourceSentimentBreakdown, SourceMeta, List[Dict]]:
         """获取Telegram情绪数据"""
         try:
-            # 调用telegram_search工具
-            result = await self.telegram_tool.execute({
+            # 调用crypto_news_search工具
+            result = await self.crypto_news_tool.execute({
                 "query": symbol,
                 "limit": 50,
             })
@@ -237,7 +237,7 @@ class SentimentAggregatorTool:
             )
             
             meta = SourceMeta(
-                provider="telegram_search",
+                provider="crypto_news_search",
                 endpoint="/search",
                 as_of_utc=datetime.utcnow().isoformat() + "Z",
                 ttl_seconds=300,

@@ -1289,11 +1289,11 @@ class WebResearchOutput(BaseModel):
         return v
 
 
-# ==================== telegram_search 工具模型 ====================
+# ==================== crypto_news_search 工具模型 ====================
 
 
-class TelegramSearchInput(BaseModel):
-    """telegram_search 输入参数"""
+class CryptoNewsSearchInput(BaseModel):
+    """crypto_news_search 输入参数"""
 
     query: Optional[str] = Field(default=None, description="搜索关键词（可选）")
     symbol: Optional[str] = Field(default=None, description="币种符号（可选），如 BTC、ETH")
@@ -1325,8 +1325,8 @@ class TelegramSearchInput(BaseModel):
         return v
 
 
-class TelegramSearchOutput(BaseModel):
-    """telegram_search 输出"""
+class CryptoNewsSearchOutput(BaseModel):
+    """crypto_news_search 输出"""
 
     query: Optional[str] = None
     symbol: Optional[str] = None

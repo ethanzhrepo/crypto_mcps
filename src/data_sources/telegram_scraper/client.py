@@ -1,7 +1,7 @@
 """
 Telegram Scraper API客户端
 
-提供从Elasticsearch获取Telegram消息数据
+提供从Elasticsearch获取Telegram数据
 """
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -100,7 +100,7 @@ class TelegramScraperClient(BaseDataSource):
         start_time: Optional[str] = None,
     ) -> tuple[list[dict], SourceMeta]:
         """
-        搜索Telegram消息
+        搜索Telegram数据
 
         Args:
             keyword: 搜索关键词
@@ -149,7 +149,7 @@ class TelegramScraperClient(BaseDataSource):
             return data, meta
         except Exception as e:
             logger.error(
-                "telegram_search_failed",
+                "crypto_news_search_failed",
                 error=str(e),
                 keyword=keyword,
                 symbol=symbol,

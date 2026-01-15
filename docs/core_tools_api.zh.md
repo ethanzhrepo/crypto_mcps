@@ -296,13 +296,13 @@ curl -X POST http://localhost:8001/tools/derivatives_hub \
 
 ---
 
-### 4. telegram_search - Telegram 搜索
+### 4. crypto_news_search - 加密新闻搜索
 
-**描述**: 通过 Telegram Scraper 搜索 Telegram 消息（Elasticsearch 支持）
+**描述**: 搜索加密新闻
 
 **端点 / Endpoint**
 ```
-POST /tools/telegram_search
+POST /tools/crypto_news_search
 ```
 
 **请求参数 / Request Parameters**
@@ -318,7 +318,7 @@ POST /tools/telegram_search
 
 **请求示例 / Request Example**
 ```bash
-curl -X POST http://localhost:8001/tools/telegram_search \
+curl -X POST http://localhost:8001/tools/crypto_news_search \
   -H "Content-Type: application/json" \
   -d '{
     "symbol": "BTC",
@@ -361,9 +361,9 @@ curl -X POST http://localhost:8001/tools/telegram_search \
 - `query`: 搜索关键词（如果提供）
 - `symbol`: 币种符号（如果提供）
 - `results`: 搜索结果数组
-  - `title`: 消息标题
-  - `url`: 消息链接
-  - `snippet`: 消息摘要
+  - `title`: 结果标题
+  - `url`: 结果链接
+  - `snippet`: 结果摘要
   - `relevance_score`: 相关性评分
   - `published_at`: 发布时间
 - `total_results`: 总结果数
@@ -372,11 +372,11 @@ curl -X POST http://localhost:8001/tools/telegram_search \
 
 **错误响应 / Error Responses**
 - 422: 参数验证错误
-- 503: 工具未初始化或 Telegram Scraper 不可达
+- 503: 工具未初始化或加密新闻后端不可达
 - 500: 内部服务错误
 
 **注意事项 / Notes**
-- 需要 TELEGRAM_SCRAPER_URL 指向可访问的 Telegram Scraper/Elasticsearch 代理
+- 需要配置 TELEGRAM_SCRAPER_URL
 - 延迟等级：快速 (fast)
 
 ---
@@ -872,7 +872,7 @@ curl -X POST http://localhost:8001/tools/draw_chart \
 
 ```json
 {
-  "detail": "Tool 'telegram_search' is not initialized or disabled"
+  "detail": "Tool 'crypto_news_search' is not initialized or disabled"
 }
 ```
 

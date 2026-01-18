@@ -117,6 +117,28 @@ class OnchainAnalyticsTool:
                 except Exception as e:
                     warnings.append(f"Failed to fetch exchange_netflow: {e}")
 
+            # 交易所流入
+            if should_include("exchange_inflow"):
+                try:
+                    result, meta = await self.client.get_exchange_inflow(
+                        symbol=symbol, window=window, limit=limit
+                    )
+                    data["exchange_inflow"] = result
+                    source_metas.append(meta)
+                except Exception as e:
+                    warnings.append(f"Failed to fetch exchange_inflow: {e}")
+
+            # 交易所流出
+            if should_include("exchange_outflow"):
+                try:
+                    result, meta = await self.client.get_exchange_outflow(
+                        symbol=symbol, window=window, limit=limit
+                    )
+                    data["exchange_outflow"] = result
+                    source_metas.append(meta)
+                except Exception as e:
+                    warnings.append(f"Failed to fetch exchange_outflow: {e}")
+
             # 矿工数据 (仅 BTC)
             if symbol == "BTC" and should_include("miner"):
                 try:
@@ -209,11 +231,13 @@ TOOL_SPEC = {
                         "active_addresses",
                         "mvrv",
                         "sopr",
-                        "exchange_reserve",
-                        "exchange_netflow",
-                        "miner",
-                        "funding_rate",
-                    ],
+                    "exchange_reserve",
+                    "exchange_netflow",
+                    "exchange_inflow",
+                    "exchange_outflow",
+                    "miner",
+                    "funding_rate",
+                ],
                 },
                 "description": "要返回的字段列表",
                 "default": ["all"],

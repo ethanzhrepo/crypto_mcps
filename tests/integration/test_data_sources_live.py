@@ -419,34 +419,6 @@ class TestTallyLive:
         assert data.dao is not None
 
 
-# ==================== Etherscan Whale Transfers Tests (Requires Key) ====================
-
-@pytest.mark.live
-@pytest.mark.requires_key
-class TestEtherscanWhaleTransfersLive:
-    """Etherscan-based Whale Transfers 真实测试（需要 ETHERSCAN_API_KEY）"""
-
-    @pytest.mark.asyncio
-    async def test_whale_transfers_eth(self, skip_if_no_key):
-        """测试获取 ETH 大额转账"""
-        skip_if_no_key("ETHERSCAN_API_KEY")
-
-        from src.tools.onchain.whale_transfers import OnchainWhaleTransfersTool
-
-        tool = OnchainWhaleTransfersTool()
-        from src.core.models import OnchainWhaleTransfersInput
-
-        params = OnchainWhaleTransfersInput(
-            token_symbol="ETH",
-            min_value_usd=1000000,
-            lookback_hours=24,
-        )
-        result = await tool.execute(params)
-
-        assert result.whale_transfers is not None
-        assert result.whale_transfers.token_symbol == "ETH"
-
-
 # ==================== Yahoo Finance Tests (FREE) ====================
 
 @pytest.mark.live
@@ -642,4 +614,3 @@ class TestFREDLive:
         assert isinstance(value, (int, float))
         # 失业率应该在0-30%之间
         assert 0 <= value <= 30
-

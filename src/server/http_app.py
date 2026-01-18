@@ -56,8 +56,8 @@ from src.core.models import (
     OnchainTVLFeesOutput,
     OnchainTokenUnlocksInput,
     OnchainTokenUnlocksOutput,
-    OnchainWhaleTransfersInput,
-    OnchainWhaleTransfersOutput,
+    OnchainAnalyticsInput,
+    OnchainAnalyticsOutput,
     CryptoNewsSearchInput,
     CryptoNewsSearchOutput,
     WebResearchInput,
@@ -108,7 +108,6 @@ from src.tools.onchain.governance import OnchainGovernanceTool
 from src.tools.onchain.stablecoins_cex import OnchainStablecoinsCEXTool
 from src.tools.onchain.token_unlocks import OnchainTokenUnlocksTool
 from src.tools.onchain.tvl_fees import OnchainTVLFeesTool
-from src.tools.onchain.whale_transfers import OnchainWhaleTransfersTool
 from src.tools.stablecoin_health import StablecoinHealthTool
 from src.tools.sentiment.aggregator import SentimentAggregatorTool
 from src.tools.crypto_news_search import CryptoNewsSearchTool
@@ -141,7 +140,6 @@ tools = {
     "onchain_bridge_volumes": None,
     "onchain_dex_liquidity": None,
     "onchain_governance": None,
-    "onchain_whale_transfers": None,
     "onchain_token_unlocks": None,
     "onchain_activity": None,
     "onchain_contract_risk": None,
@@ -257,7 +255,7 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "output_model": WebResearchOutput,
         "capabilities": ["web", "news", "research", "narrative"],
         "examples": [
-            {"description": "Search ETF approval news", "arguments": {"query": "BTC spot ETF approval", "top_k": 5}}
+            {"description": "Search ETF approval news", "arguments": {"query": "BTC spot ETF approval", "limit": 5}}
         ],
         "limitations": ["Providers may require API keys (see docker/.env)."],
         "cost_hints": {"latency_class": "slow"},
@@ -270,7 +268,7 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "output_model": MacroHubOutput,
         "capabilities": ["macro", "rates", "indices", "calendar"],
         "examples": [
-            {"description": "Fetch Fear & Greed and DXY", "arguments": {"include_fields": ["fear_greed", "dxy"]}}
+            {"description": "Fetch Fear & Greed", "arguments": {"mode": "fear_greed"}}
         ],
         "limitations": ["FRED fields require FRED_API_KEY when enabled."],
         "cost_hints": {"latency_class": "fast"},
@@ -391,7 +389,7 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "input_model": OnchainStablecoinsCEXInput,
         "output_model": OnchainStablecoinsCEXOutput,
         "capabilities": ["onchain", "stablecoins", "cex_reserves"],
-        "examples": [{"description": "USDT supply and CEX reserves", "arguments": {"stablecoin": "USDT"}}],
+        "examples": [{"description": "Binance stablecoin metrics + reserves", "arguments": {"exchange": "binance"}}],
         "limitations": [],
         "cost_hints": {"latency_class": "fast"},
     },
@@ -402,7 +400,7 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "input_model": OnchainBridgeVolumesInput,
         "output_model": OnchainBridgeVolumesOutput,
         "capabilities": ["onchain", "bridge", "crosschain"],
-        "examples": [{"description": "Arbitrum bridge volumes", "arguments": {"chain": "arbitrum"}}],
+        "examples": [{"description": "Stargate bridge volumes", "arguments": {"bridge": "stargate"}}],
         "limitations": [],
         "cost_hints": {"latency_class": "fast"},
     },
@@ -429,24 +427,13 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "cost_hints": {"latency_class": "medium"},
     },
     {
-        "name": "onchain_whale_transfers",
-        "description": "Large on-chain transfers using Whale Alert API.",
-        "endpoint": "/tools/onchain_whale_transfers",
-        "input_model": OnchainWhaleTransfersInput,
-        "output_model": OnchainWhaleTransfersOutput,
-        "capabilities": ["onchain", "whales", "transfers"],
-        "examples": [{"description": "Track large BTC transfers", "arguments": {"symbol": "BTC", "min_value_usd": 1000000}}],
-        "limitations": ["WHALE_ALERT_API_KEY recommended for full coverage."],
-        "cost_hints": {"latency_class": "fast"},
-    },
-    {
         "name": "onchain_token_unlocks",
         "description": "Token vesting and unlock schedules from Token Unlocks.",
         "endpoint": "/tools/onchain_token_unlocks",
         "input_model": OnchainTokenUnlocksInput,
         "output_model": OnchainTokenUnlocksOutput,
         "capabilities": ["tokenomics", "unlock", "supply"],
-        "examples": [{"description": "Next unlocks for ARB", "arguments": {"symbol": "ARB"}}],
+        "examples": [{"description": "Next unlocks for ARB", "arguments": {"token_symbol": "ARB"}}],
         "limitations": ["TOKEN_UNLOCKS_API_KEY required for some endpoints."],
         "cost_hints": {"latency_class": "fast"},
     },
@@ -457,7 +444,7 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "input_model": OnchainActivityInput,
         "output_model": OnchainActivityOutput,
         "capabilities": ["onchain", "activity", "addresses", "transactions"],
-        "examples": [{"description": "Ethereum activity 7d", "arguments": {"chain": "ethereum", "window": "7d"}}],
+        "examples": [{"description": "Ethereum activity", "arguments": {"chain": "ethereum"}}],
         "limitations": ["ETHERSCAN_API_KEY required when querying Ethereum mainnet."],
         "cost_hints": {"latency_class": "medium"},
     },
@@ -471,7 +458,7 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "examples": [
             {
                 "description": "Analyze contract risk by address",
-                "arguments": {"address": "0x0000000000000000000000000000000000000000", "chain": "ethereum"},
+                "arguments": {"contract_address": "0x0000000000000000000000000000000000000000", "chain": "ethereum"},
             }
         ],
         "limitations": ["GOPLUS_API_KEY/GOPLUS_API_SECRET required when provider=goplus."],
@@ -484,7 +471,7 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "input_model": GrokSocialTraceInput,
         "output_model": GrokSocialTraceOutput,
         "capabilities": ["social", "narrative", "trace", "x/twitter"],
-        "examples": [{"description": "Trace a rumor tweet", "arguments": {"text": "Some rumor text"}}],
+        "examples": [{"description": "Trace a rumor tweet", "arguments": {"keyword_prompt": "Some rumor text"}}],
         "limitations": ["Requires XAI_API_KEY and tool must be enabled in config/tools.yaml."],
         "cost_hints": {"latency_class": "slow"},
     },
@@ -545,8 +532,8 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "name": "onchain_analytics",
         "description": "On-chain analytics tool powered by CryptoQuant: MVRV ratio, SOPR, active addresses, exchange flows (reserve/netflow/inflow/outflow), miner data (BTC only), and derivatives funding rates.",
         "endpoint": "/tools/onchain_analytics",
-        "input_model": None,  # Uses dict input
-        "output_model": None,  # Uses dict output
+        "input_model": OnchainAnalyticsInput,
+        "output_model": OnchainAnalyticsOutput,
         "capabilities": ["onchain", "mvrv", "sopr", "exchange_flows", "miner", "funding_rate", "valuation"],
         "examples": [
             {
@@ -581,12 +568,21 @@ def _build_registry_entry(spec: Dict[str, Any]) -> Dict[str, Any]:
     input_model: Type[Any] = spec.get("input_model")
     output_model: Optional[Type[Any]] = spec.get("output_model")
     typical_ttl = _compute_typical_ttl_seconds(spec["name"])
+    as_of_semantics = (
+        "Responses include as_of_utc and source_meta[].as_of_utc indicating data timestamp; "
+        "ttl_seconds reflects cache freshness; conflicts/warnings may be present."
+    )
+    if spec["name"] == "grok_social_trace":
+        as_of_semantics = (
+            "Response includes as_of_utc only; source_meta and warnings are not returned."
+        )
+    elif spec["name"] == "draw_chart":
+        as_of_semantics = (
+            "Response includes as_of_utc; warnings are under chart.warnings; source_meta is not returned."
+        )
     freshness = {
         "typical_ttl_seconds": typical_ttl,
-        "as_of_semantics": (
-            "Responses include as_of_utc and source_meta[].as_of_utc indicating data timestamp; "
-            "ttl_seconds reflects cache freshness; conflicts/warnings may be present."
-        ),
+        "as_of_semantics": as_of_semantics,
     }
     return {
         "name": spec["name"],
@@ -815,7 +811,6 @@ async def initialize_tools():
     )
     tools["onchain_dex_liquidity"] = OnchainDEXLiquidityTool(thegraph_client=thegraph)
     tools["onchain_governance"] = OnchainGovernanceTool()
-    tools["onchain_whale_transfers"] = OnchainWhaleTransfersTool()
     tools["onchain_token_unlocks"] = OnchainTokenUnlocksTool()
     tools["onchain_activity"] = OnchainActivityTool()
     tools["onchain_contract_risk"] = OnchainContractRiskTool()
@@ -1275,23 +1270,6 @@ async def onchain_governance(params: OnchainGovernanceInput):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/tools/onchain_whale_transfers")
-async def onchain_whale_transfers(params: OnchainWhaleTransfersInput):
-    """Onchain Whale Transfers 工具"""
-    try:
-        tool = tools["onchain_whale_transfers"]
-        if tool is None:
-            raise HTTPException(status_code=503, detail="Tool not initialized")
-
-        result = await tool.execute(params)
-        return result.model_dump() if hasattr(result, "model_dump") else result
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        logger.error("onchain_whale_transfers error", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.post("/tools/onchain_token_unlocks")
 async def onchain_token_unlocks(params: OnchainTokenUnlocksInput):
     """Onchain Token Unlocks 工具"""
@@ -1430,9 +1408,11 @@ async def onchain_analytics(request: Request):
         if tool is None:
             raise HTTPException(status_code=503, detail="Tool not initialized")
 
-        params = await request.json()
-        result = await tool.execute(params)
-        return result
+        raw_params = await request.json()
+        params = OnchainAnalyticsInput(**raw_params)
+        result = await tool.execute(params.model_dump())
+        output = OnchainAnalyticsOutput(**result)
+        return output.model_dump()
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:

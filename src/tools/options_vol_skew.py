@@ -82,6 +82,29 @@ class OptionsVolSkewTool:
                 logger.warning("binance_options_fetch_failed", error=str(exc))
                 warnings.append(f"Binance options fetch failed: {exc}")
 
+        def _timestamp_to_iso(ts_value):
+            if ts_value is None:
+                return None
+            try:
+                ts = float(ts_value)
+                # Heuristic: seconds vs ms
+                ts_sec = ts / 1000 if ts > 1e12 else ts
+                return datetime.utcfromtimestamp(ts_sec).isoformat() + "Z"
+            except (TypeError, ValueError):
+                return None
+
+        summary: dict = {}
+        deribit = data.get("deribit") if isinstance(data.get("deribit"), dict) else None
+        if deribit and isinstance(deribit.get("volatility_index"), dict):
+            vol_index = deribit.get("volatility_index", {})
+            dvol = vol_index.get("dvol")
+            if dvol is not None:
+                summary["dvol_index"] = dvol
+            summary["dvol_timestamp"] = _timestamp_to_iso(vol_index.get("timestamp"))
+
+        if summary:
+            data["summary"] = summary
+
         elapsed = time.time() - start_time
         logger.info(
             "options_vol_skew_execute_complete",

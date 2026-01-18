@@ -33,7 +33,6 @@ from src.core.models import (
     OnchainStablecoinsCEXInput,
     OnchainTVLFeesInput,
     OnchainTokenUnlocksInput,
-    OnchainWhaleTransfersInput,
     CryptoNewsSearchInput,
     WebResearchInput,
     # 新增工具模型
@@ -77,7 +76,6 @@ from src.tools.onchain.governance import OnchainGovernanceTool
 from src.tools.onchain.stablecoins_cex import OnchainStablecoinsCEXTool
 from src.tools.onchain.token_unlocks import OnchainTokenUnlocksTool
 from src.tools.onchain.tvl_fees import OnchainTVLFeesTool
-from src.tools.onchain.whale_transfers import OnchainWhaleTransfersTool
 from src.tools.stablecoin_health import StablecoinHealthTool
 from src.tools.crypto_news_search import CryptoNewsSearchTool
 from src.tools.web_research import WebResearchTool
@@ -113,7 +111,6 @@ class MCPServer:
         self.onchain_bridge_volumes_tool = None
         self.onchain_dex_liquidity_tool = None
         self.onchain_governance_tool = None
-        self.onchain_whale_transfers_tool = None
         self.onchain_token_unlocks_tool = None
         self.onchain_activity_tool = None
         self.onchain_contract_risk_tool = None
@@ -291,7 +288,6 @@ class MCPServer:
             thegraph_client=thegraph_client
         )
         self.onchain_governance_tool = OnchainGovernanceTool()
-        self.onchain_whale_transfers_tool = OnchainWhaleTransfersTool()
         self.onchain_token_unlocks_tool = OnchainTokenUnlocksTool()
         self.onchain_activity_tool = OnchainActivityTool()
         self.onchain_contract_risk_tool = OnchainContractRiskTool()
@@ -553,7 +549,7 @@ class MCPServer:
 
             if config.is_tool_enabled("onchain_contract_risk"):
                 tools.append(
-                    {
+                {
                     "name": "onchain_governance",
                     "description": "DAO governance proposals from Snapshot (off-chain) and Tally (on-chain).",
                     "input_schema": {
@@ -571,30 +567,6 @@ class MCPServer:
                             "governor_address": {
                                 "type": "string",
                                 "description": "On-chain governor contract address for Tally"
-                            }
-                        },
-                        "required": []
-                    }
-                },
-                {
-                    "name": "onchain_whale_transfers",
-                    "description": "Large on-chain transfers using Whale Alert API.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "token_symbol": {
-                                "type": "string",
-                                "description": "Optional token symbol, e.g. BTC, ETH; if omitted returns multi-asset view"
-                            },
-                            "min_value_usd": {
-                                "type": "number",
-                                "default": 500000.0,
-                                "description": "Minimum transfer size in USD"
-                            },
-                            "lookback_hours": {
-                                "type": "integer",
-                                "default": 24,
-                                "description": "Lookback window in hours"
                             }
                         },
                         "required": []
@@ -645,6 +617,10 @@ class MCPServer:
                             "chain": {
                                 "type": "string",
                                 "description": "Chain name, e.g. ethereum, arbitrum, optimism, polygon"
+                            },
+                            "provider": {
+                                "type": "string",
+                                "description": "Optional provider override: goplus or slither"
                             }
                         },
                         "required": ["contract_address", "chain"]
@@ -814,11 +790,6 @@ class MCPServer:
                 "onchain_governance",
                 "DAO governance proposals from Snapshot (off-chain) and Tally (on-chain).",
                 OnchainGovernanceInput,
-            )
-            add_tool(
-                "onchain_whale_transfers",
-                "Large on-chain transfers using Whale Alert API.",
-                OnchainWhaleTransfersInput,
             )
             add_tool(
                 "onchain_token_unlocks",
@@ -996,11 +967,6 @@ class MCPServer:
                 elif name == "onchain_governance":
                     input_params = OnchainGovernanceInput(**arguments)
                     result = await self.onchain_governance_tool.execute(input_params)
-                    return [{"type": "text", "text": result.model_dump_json(indent=2)}]
-
-                elif name == "onchain_whale_transfers":
-                    input_params = OnchainWhaleTransfersInput(**arguments)
-                    result = await self.onchain_whale_transfers_tool.execute(input_params)
                     return [{"type": "text", "text": result.model_dump_json(indent=2)}]
 
                 elif name == "onchain_token_unlocks":

@@ -932,23 +932,6 @@ async def test_onchain_governance_endpoint_live(rest_client, record_response):
 
 @pytest.mark.asyncio
 @pytest.mark.requires_key
-async def test_onchain_whale_transfers_endpoint_live(rest_client, record_response, skip_if_no_key):
-    """POST /tools/onchain_whale_transfers 应返回大额转账数据（需要ETHERSCAN_API_KEY）"""
-    skip_if_no_key("ETHERSCAN_API_KEY")
-
-    # 使用正确的参数名
-    payload = {"token_symbol": "ETH", "min_value_usd": 1000000, "lookback_hours": 24}
-    response = await rest_client.post("/tools/onchain_whale_transfers", json=payload)
-    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-
-    body = response.json()
-    assert "whale_transfers" in body or "data" in body or "transfers" in body
-
-    record_response("onchain_whale_transfers", response)
-
-
-@pytest.mark.asyncio
-@pytest.mark.requires_key
 async def test_onchain_token_unlocks_endpoint_live(rest_client, record_response, skip_if_no_key):
     """POST /tools/onchain_token_unlocks 应返回代币解锁数据（需要TOKEN_UNLOCKS_API_KEY）"""
     skip_if_no_key("TOKEN_UNLOCKS_API_KEY")

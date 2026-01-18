@@ -1129,39 +1129,6 @@ class OnchainGovernanceOutput(BaseModel):
         return v
 
 
-class OnchainWhaleTransfersInput(BaseModel):
-    """onchain_whale_transfers 输入参数"""
-
-    token_symbol: Optional[str] = Field(
-        default=None,
-        description="代币符号，如 ETH、BTC，缺省时返回多币种结果",
-    )
-    min_value_usd: float = Field(
-        default=500000.0,
-        description="大额转账最小金额（USD）",
-    )
-    lookback_hours: int = Field(
-        default=24,
-        description="回溯的小时数，例如 24 表示最近 24 小时",
-    )
-
-
-class OnchainWhaleTransfersOutput(BaseModel):
-    """onchain_whale_transfers 输出"""
-
-    whale_transfers: WhaleTransfersData
-    source_meta: List[SourceMeta] = Field(default_factory=list)
-    warnings: List[str] = Field(default_factory=list)
-    as_of_utc: str
-
-    @field_validator("as_of_utc", mode="before")
-    @classmethod
-    def format_timestamp(cls, v):
-        if isinstance(v, datetime):
-            return v.isoformat() + "Z"
-        return v
-
-
 class OnchainTokenUnlocksInput(BaseModel):
     """onchain_token_unlocks 输入参数"""
 
@@ -1218,12 +1185,56 @@ class OnchainContractRiskInput(BaseModel):
 
     contract_address: str = Field(..., description="合约地址")
     chain: str = Field(..., description="链名称，如 ethereum, arbitrum, optimism, polygon")
+    provider: Optional[str] = Field(
+        default=None,
+        description="风险分析提供商：goplus 或 slither（可选）",
+    )
 
 
 class OnchainContractRiskOutput(BaseModel):
     """onchain_contract_risk 输出"""
 
     contract_risk: ContractRisk
+    source_meta: List[SourceMeta] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    as_of_utc: str
+
+    @field_validator("as_of_utc", mode="before")
+    @classmethod
+    def format_timestamp(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat() + "Z"
+        return v
+
+
+class OnchainAnalyticsInput(BaseModel):
+    """onchain_analytics 输入参数"""
+
+    symbol: str = Field(
+        default="BTC",
+        description="资产符号（BTC, ETH）",
+    )
+    include_fields: List[str] = Field(
+        default_factory=lambda: ["all"],
+        description="包含的字段：active_addresses, mvrv, sopr, exchange_reserve, exchange_netflow, exchange_inflow, exchange_outflow, miner, funding_rate, all",
+    )
+    window: str = Field(
+        default="day",
+        description="时间窗口：hour 或 day",
+    )
+    limit: int = Field(
+        default=30,
+        description="数据点数量（1-365）",
+        ge=1,
+        le=365,
+    )
+
+
+class OnchainAnalyticsOutput(BaseModel):
+    """onchain_analytics 输出"""
+
+    symbol: str
+    data: Dict[str, Any] = Field(default_factory=dict)
     source_meta: List[SourceMeta] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
     as_of_utc: str

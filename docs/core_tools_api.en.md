@@ -11,10 +11,16 @@ Core tools provide fundamental data query capabilities for cryptocurrency market
 - **Request Format**: `Content-Type: application/json`
 - **Response Format**: JSON
 
-All responses include the following common fields:
+Most responses include the following common fields:
 - `source_meta`: Array of data source metadata
 - `warnings`: Array of warning messages
 - `as_of_utc`: Data timestamp (ISO 8601)
+
+Exceptions:
+- `grok_social_trace` returns only the analysis fields plus `as_of_utc` (no `source_meta`/`warnings`)
+- `draw_chart` returns chart warnings inside `chart.warnings` and does not include `source_meta`
+
+Some tools also include `conflicts` when cross-source discrepancies are detected.
 
 ## Tool List
 
@@ -86,6 +92,7 @@ curl -X POST http://localhost:8001/tools/crypto_overview \
       "degraded": false
     }
   ],
+  "conflicts": [],
   "warnings": [],
   "as_of_utc": "2025-01-10T12:00:00Z"
 }
@@ -100,6 +107,7 @@ curl -X POST http://localhost:8001/tools/crypto_overview \
 - `data.sector`: Sector classification information
 - `data.dev_activity`: Developer activity (requires GITHUB_TOKEN)
 - `source_meta`: Data source metadata
+- `conflicts`: Cross-source conflicts (if any)
 - `warnings`: Warning messages list
 
 **Error Responses**
@@ -177,6 +185,7 @@ curl -X POST http://localhost:8001/tools/market_microstructure \
       "version": "v3"
     }
   ],
+  "conflicts": [],
   "warnings": [],
   "as_of_utc": "2025-01-10T12:00:00Z"
 }
@@ -192,6 +201,7 @@ curl -X POST http://localhost:8001/tools/market_microstructure \
 - `data.taker_flow`: Taker buy/sell flow analysis
 - `data.slippage`: Slippage estimation
 - `source_meta`: Data source metadata
+- `conflicts`: Cross-source conflicts (if any)
 - `warnings`: Warning messages list
 
 **Error Responses**
@@ -202,6 +212,7 @@ curl -X POST http://localhost:8001/tools/market_microstructure \
 **Notes**
 - No special API keys required
 - Latency class: fast
+- If orderbook-based fields are requested, `orderbook_depth` is enforced to at least 100
 
 ---
 
@@ -267,6 +278,7 @@ curl -X POST http://localhost:8001/tools/derivatives_hub \
       "version": "v3"
     }
   ],
+  "conflicts": [],
   "warnings": [],
   "as_of_utc": "2025-01-10T12:00:00Z"
 }
@@ -283,6 +295,7 @@ curl -X POST http://localhost:8001/tools/derivatives_hub \
 - `data.options_metrics`: Options market metrics
 - `data.borrow_rates`: Lending rates
 - `source_meta`: Data source metadata
+- `conflicts`: Cross-source conflicts (if any)
 - `warnings`: Warning messages list
 
 **Error Responses**
@@ -406,7 +419,7 @@ curl -X POST http://localhost:8001/tools/web_research_search \
   -H "Content-Type: application/json" \
   -d '{
     "query": "BTC spot ETF approval",
-    "top_k": 5
+    "limit": 5
   }'
 ```
 
@@ -484,7 +497,7 @@ POST /tools/grok_social_trace
 curl -X POST http://localhost:8001/tools/grok_social_trace \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Some rumor text"
+    "keyword_prompt": "Some rumor text"
   }'
 ```
 
@@ -564,7 +577,7 @@ POST /tools/macro_hub
 curl -X POST http://localhost:8001/tools/macro_hub \
   -H "Content-Type: application/json" \
   -d '{
-    "include_fields": ["fear_greed", "dxy"]
+    "mode": "fear_greed"
   }'
 ```
 

@@ -40,7 +40,12 @@ class OnchainContractRiskTool:
         warnings: list[str] = []
         source_metas: list[SourceMeta] = []
 
-        provider = config.settings.contract_risk_provider.lower()
+        provider = (params.provider or config.settings.contract_risk_provider or "goplus").lower()
+        if provider not in {"goplus", "slither"}:
+            warnings.append(
+                f"Unknown provider '{provider}', falling back to config provider."
+            )
+            provider = (config.settings.contract_risk_provider or "goplus").lower()
 
         if provider == "slither":
             # 使用 Slither 静态分析
@@ -97,4 +102,3 @@ class OnchainContractRiskTool:
             warnings=warnings,
             as_of_utc=datetime.utcnow(),
         )
-

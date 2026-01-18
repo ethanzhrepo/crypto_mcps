@@ -324,36 +324,10 @@ curl -X POST http://localhost:8001/tools/etf_flows_holdings \
   "dataset": "bitcoin",
   "flows": [
     {
-      "data": {
-        "date": "2025-01-10",
-        "total_net_flow": 325000000.0,
-        "etf_flows": {
-          "IBIT": 145000000.0,
-          "FBTC": 95000000.0,
-          "GBTC": -25000000.0,
-          "ARKB": 65000000.0,
-          "BITB": 45000000.0
-        },
-        "cumulative_flow": 18500000000.0
-      }
+      "data": {}
     }
   ],
-  "holdings": [
-    {
-      "data": {
-        "date": "2025-01-10",
-        "total_btc": 875000.5,
-        "total_value_usd": 83125000000.0,
-        "etf_holdings": {
-          "GBTC": 285000.2,
-          "IBIT": 215000.8,
-          "FBTC": 145000.3,
-          "ARKB": 95000.1,
-          "BITB": 75000.0
-        }
-      }
-    }
-  ],
+  "holdings": [],
   "source_meta": [
     {
       "provider": "farside",
@@ -370,14 +344,8 @@ curl -X POST http://localhost:8001/tools/etf_flows_holdings \
 
 **Field Descriptions**
 - `dataset`: Dataset type (bitcoin or ethereum)
-- `flows`: Flow data
-  - `total_net_flow`: Total net inflow (USD)
-  - `etf_flows`: Individual ETF flows
-  - `cumulative_flow`: Cumulative flow
-- `holdings`: Holdings data
-  - `total_btc/eth`: Total holdings
-  - `total_value_usd`: Total holdings value
-  - `etf_holdings`: Individual ETF holdings
+- `flows`: Parsed flow rows from Farside (raw fields vary by dataset)
+- `holdings`: Parsed holdings rows (may be empty if holdings source is not configured)
 - `source_meta`: Data source metadata
 
 **Error Responses**
@@ -386,13 +354,13 @@ curl -X POST http://localhost:8001/tools/etf_flows_holdings \
 - 500: Internal server error
 
 **Notes**
-- Holdings data requires a configured source; flows are best-effort parsing
+- Holdings data source is not configured by default; requesting `holdings`/`all` returns empty holdings with a warning
 - Latency class: medium
 - Data source: Farside and other public sources
 
 ---
 
-### 4. cex_netflow_reserves - CEX Reserves & Netflow
+### 4. cex_netflow_reserves - CEX Reserves & Whale Transfers
 
 **Description**: CEX reserves from DefiLlama with optional Whale Alert transfers
 
@@ -656,8 +624,7 @@ curl -X POST http://localhost:8001/tools/stablecoin_health \
   "symbol": "USDC",
   "stablecoins": [
     {
-      "symbol": "USDC",
-      "name": "USD Coin",
+      "stablecoin": "USDC",
       "total_supply": 25000000000.0,
       "market_cap": 25000000000.0,
       "chains": {
@@ -670,8 +637,6 @@ curl -X POST http://localhost:8001/tools/stablecoin_health \
         "solana": 1000000000.0
       },
       "dominance": 0.285,
-      "price": 1.0002,
-      "price_deviation_pct": 0.02,
       "timestamp": "2025-01-10T12:00:00Z"
     }
   ],
@@ -695,8 +660,6 @@ curl -X POST http://localhost:8001/tools/stablecoin_health \
   - `market_cap`: Market capitalization
   - `chains`: Chain distribution details
   - `dominance`: Market share (relative to all stablecoins)
-  - `price`: Current price
-  - `price_deviation_pct`: Deviation from peg (percentage)
 - `source_meta`: Data source metadata
 
 **Error Responses**
@@ -742,34 +705,15 @@ curl -X POST http://localhost:8001/tools/options_vol_skew \
 {
   "symbol": "BTC",
   "data": {
-    "deribit": {
+    "summary": {
       "dvol_index": 68.5,
-      "atm_iv_30d": 65.2,
-      "atm_iv_60d": 62.8,
-      "atm_iv_90d": 60.5,
-      "skew_25delta": 5.8,
-      "put_call_ratio": 1.35,
-      "total_oi_usd": 8500000000.0,
-      "total_volume_24h_usd": 1200000000.0,
-      "iv_rank": 58.5,
-      "expiries": [
-        {
-          "expiry_date": "2025-01-31",
-          "atm_iv": 65.2,
-          "skew_25delta": 5.8,
-          "put_call_ratio": 1.32,
-          "total_oi": 2500000000.0
-        }
-      ],
-      "timestamp": "2025-01-10T12:00:00Z"
+      "dvol_timestamp": "2025-01-10T12:00:00Z"
     },
-    "okx": {
-      "atm_iv_30d": 66.5,
-      "skew_25delta": 6.2,
-      "put_call_ratio": 1.28,
-      "total_oi_usd": 3200000000.0,
-      "timestamp": "2025-01-10T12:00:00Z"
-    }
+    "deribit": {
+      "volatility_index": {}
+    },
+    "okx": {},
+    "binance": {}
   },
   "source_meta": [
     {
@@ -786,15 +730,12 @@ curl -X POST http://localhost:8001/tools/options_vol_skew \
 ```
 
 **Field Descriptions**
-- `data.<provider>`: Options data from each provider
-  - `dvol_index`: Deribit Volatility Index (Deribit only)
-  - `atm_iv_*`: ATM implied volatility (30/60/90 days)
-  - `skew_25delta`: 25 delta skew
-  - `put_call_ratio`: Put/call ratio
-  - `total_oi_usd`: Total open interest (USD)
-  - `total_volume_24h_usd`: 24-hour trading volume (USD)
-  - `iv_rank`: IV percentile
-  - `expiries`: Details for each expiry
+- `data.summary`: Derived metrics (best-effort)
+  - `dvol_index`: Deribit DVOL value
+  - `dvol_timestamp`: Timestamp of DVOL observation
+- `data.<provider>`: Raw provider payloads (shape varies by provider and expiry)
+  - `deribit.volatility_index`: Volatility index payload
+  - `deribit.instruments`: Present when `expiry` is provided (filtered contracts)
 - `source_meta`: Data source metadata
 
 **Error Responses**
@@ -839,44 +780,44 @@ curl -X POST http://localhost:8001/tools/blockspace_mev \
 {
   "chain": "ethereum",
   "mev_boost": {
-    "total_blocks": 15680,
-    "mev_boost_blocks": 14850,
-    "mev_boost_rate": 0.947,
-    "total_value_eth": 8520.5,
-    "total_value_usd": 20450000.0,
-    "avg_value_per_block_eth": 0.574,
+    "builder_blocks_received": [],
+    "proposer_payload_delivered": [],
+    "summary": {
+      "builder_blocks_count": 0,
+      "proposer_blocks_count": 0,
+      "total_builder_value_wei": 0,
+      "total_proposer_value_wei": 0,
+      "total_proposer_value_eth": 0.0,
+      "total_proposer_value_usd": 0.0,
+      "avg_proposer_value_eth": 0.0,
+      "avg_proposer_value_usd": 0.0
+    },
     "top_builders": [
       {
-        "builder": "beaverbuild",
-        "blocks": 5200,
-        "value_eth": 3150.2,
-        "share": 0.35
-      },
-      {
-        "builder": "flashbots",
-        "blocks": 4800,
-        "value_eth": 2850.1,
-        "share": 0.323
+        "builder": "0xabc...",
+        "blocks": 120,
+        "value_wei": 4500000000000000000,
+        "share": 0.25
       }
     ],
     "top_relays": [
       {
-        "relay": "ultra_sound_relay",
-        "blocks": 6500,
-        "value_eth": 3850.5,
-        "share": 0.438
+        "relay": "flashbots",
+        "blocks": 480,
+        "share": 1.0
       }
     ],
     "recent_blocks": [
       {
         "block_number": 18950000,
+        "value_wei": 850000000000000000,
         "value_eth": 0.85,
-        "builder": "beaverbuild",
-        "relay": "ultra_sound_relay",
+        "value_usd": 2040.0,
+        "builder": "0xabc...",
+        "relay": "flashbots",
         "timestamp": "2025-01-10T11:58:00Z"
       }
-    ],
-    "timestamp": "2025-01-10T12:00:00Z"
+    ]
   },
   "gas_oracle": {
     "safe_gas_price": 25,
@@ -892,10 +833,17 @@ curl -X POST http://localhost:8001/tools/blockspace_mev \
   },
   "source_meta": [
     {
-      "provider": "mevboost.pics",
-      "endpoint": "/",
+      "provider": "flashbots",
+      "endpoint": "/relay/v1/data/bidtraces/builder_blocks_received",
       "as_of_utc": "2025-01-10T12:00:00Z",
-      "ttl_seconds": 300,
+      "ttl_seconds": 30,
+      "version": "v3"
+    },
+    {
+      "provider": "flashbots",
+      "endpoint": "/relay/v1/data/bidtraces/proposer_payload_delivered",
+      "as_of_utc": "2025-01-10T12:00:00Z",
+      "ttl_seconds": 30,
       "version": "v3"
     }
   ],
@@ -905,14 +853,13 @@ curl -X POST http://localhost:8001/tools/blockspace_mev \
 ```
 
 **Field Descriptions**
-- `mev_boost`: MEV-Boost statistics
-  - `total_blocks`: Total block count
-  - `mev_boost_blocks`: MEV-Boost block count
-  - `mev_boost_rate`: MEV-Boost usage rate
-  - `total_value_eth/usd`: Total MEV value
-  - `top_builders`: Top builder list
-  - `top_relays`: Top relay list
-  - `recent_blocks`: Recent block list
+- `mev_boost`: Raw MEV-Boost payloads and derived metrics
+  - `builder_blocks_received`: Flashbots builder blocks list
+  - `proposer_payload_delivered`: Flashbots proposer payload list
+  - `summary`: Aggregated counts and total value (wei/eth/usd)
+  - `top_builders`: Top builders by delivered payloads
+  - `top_relays`: Top relays by delivered payloads
+  - `recent_blocks`: Recent delivered payloads with value and timestamps
 - `gas_oracle`: Gas price oracle data
   - `safe/propose/fast_gas_price`: Safe/standard/fast gas prices (Gwei)
   - `base_fee`: Base fee
@@ -926,6 +873,7 @@ curl -X POST http://localhost:8001/tools/blockspace_mev \
 
 **Notes**
 - Gas oracle requires ETHERSCAN_API_KEY for ethereum
+- USD value fields use Etherscan ETH price when available
 - Latency class: fast
 - Currently supports Ethereum mainnet only
 
@@ -961,49 +909,11 @@ curl -X POST http://localhost:8001/tools/hyperliquid_market \
 {
   "symbol": "BTC",
   "data": {
-    "funding": {
-      "funding_rate": 0.00015,
-      "funding_rate_annual": 0.1314,
-      "next_funding_time": "2025-01-10T16:00:00Z",
-      "mark_price": 95000.0,
-      "index_price": 94995.0,
-      "timestamp": "2025-01-10T12:00:00Z"
-    },
-    "open_interest": {
-      "open_interest": 2500000000.0,
-      "oi_change_24h": 125000000.0,
-      "oi_change_percent_24h": 5.26,
-      "timestamp": "2025-01-10T12:00:00Z"
-    },
-    "orderbook": {
-      "bids": [
-        {"price": 94995.0, "size": 5.25},
-        {"price": 94990.0, "size": 8.50}
-      ],
-      "asks": [
-        {"price": 95005.0, "size": 4.75},
-        {"price": 95010.0, "size": 7.25}
-      ],
-      "mid_price": 95000.0,
-      "spread_bps": 1.05,
-      "timestamp": "2025-01-10T12:00:00Z"
-    },
-    "trades": [
-      {
-        "price": 95000.0,
-        "size": 2.5,
-        "side": "buy",
-        "timestamp": 1704888000000
-      }
-    ],
-    "asset_contexts": {
-      "mark_price": 95000.0,
-      "oracle_price": 94995.0,
-      "funding_rate": 0.00015,
-      "open_interest": 2500000000.0,
-      "volume_24h": 8500000000.0,
-      "timestamp": "2025-01-10T12:00:00Z"
-    }
+    "funding": {},
+    "open_interest": {},
+    "orderbook": {},
+    "trades": [],
+    "asset_contexts": {}
   },
   "source_meta": [
     {
@@ -1020,19 +930,7 @@ curl -X POST http://localhost:8001/tools/hyperliquid_market \
 ```
 
 **Field Descriptions**
-- `data.funding`: Funding rate data
-  - `funding_rate`: Current rate
-  - `funding_rate_annual`: Annualized rate
-  - `next_funding_time`: Next settlement time
-- `data.open_interest`: Open interest data
-  - `open_interest`: Open interest (USD)
-  - `oi_change_24h`: 24-hour change
-- `data.orderbook`: Orderbook data
-  - `bids/asks`: Bid/ask sides
-  - `mid_price`: Mid price
-  - `spread_bps`: Bid-ask spread (bps)
-- `data.trades`: Recent trade records
-- `data.asset_contexts`: Asset context information
+- `data.<field>`: Raw Hyperliquid responses for each requested field
 - `source_meta`: Data source metadata
 
 **Error Responses**

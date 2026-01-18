@@ -2,7 +2,7 @@
 
 ## 概述
 
-链上分析工具提供区块链层面的深度数据分析，包括协议 TVL、跨链桥流量、DEX 流动性、治理提案、大额转账、代币解锁、活跃度指标、合约风险和 CryptoQuant 链上分析。
+链上分析工具提供区块链层面的深度数据分析，包括协议 TVL、跨链桥流量、DEX 流动性、治理提案、代币解锁、活跃度指标、合约风险和 CryptoQuant 链上分析。
 
 ## 通用说明
 
@@ -47,21 +47,28 @@ curl -X POST http://localhost:8001/tools/onchain_tvl_fees \
 ```json
 {
   "protocol": "uniswap",
-  "data": {
-    "tvl": {
-      "total_usd": 5200000000.0,
-      "change_24h": 2.5,
-      "chain_breakdown": {
-        "ethereum": 3800000000.0,
-        "arbitrum": 800000000.0,
-        "optimism": 600000000.0
-      }
+  "chain": null,
+  "tvl": {
+    "protocol": "uniswap",
+    "tvl_usd": 5200000000.0,
+    "tvl_change_24h": 2.5,
+    "tvl_change_7d": 6.8,
+    "chain_breakdown": {
+      "ethereum": 3800000000.0,
+      "arbitrum": 800000000.0,
+      "optimism": 600000000.0
     },
-    "fees": {
-      "fees_24h": 3500000.0,
-      "revenue_24h": 1050000.0,
-      "fees_7d": 25000000.0
-    }
+    "timestamp": "2025-01-10T12:00:00Z"
+  },
+  "protocol_fees": {
+    "protocol": "uniswap",
+    "fees_24h": 3500000.0,
+    "revenue_24h": 1050000.0,
+    "fees_7d": 25000000.0,
+    "revenue_7d": 7500000.0,
+    "fees_30d": 98000000.0,
+    "revenue_30d": 29500000.0,
+    "timestamp": "2025-01-10T12:00:00Z"
   },
   "source_meta": [
     {
@@ -78,11 +85,12 @@ curl -X POST http://localhost:8001/tools/onchain_tvl_fees \
 ```
 
 **主要字段说明 / Field Descriptions**
-- `data.tvl.total_usd`: 总锁仓价值（美元）
-- `data.tvl.change_24h`: 24小时变化百分比
-- `data.tvl.chain_breakdown`: 各链的 TVL 分布
-- `data.fees.fees_24h`: 24小时协议费用
-- `data.fees.revenue_24h`: 24小时协议收入
+- `tvl.tvl_usd`: 总锁仓价值（美元）
+- `tvl.tvl_change_24h`: 24小时变化百分比
+- `tvl.tvl_change_7d`: 7天变化百分比
+- `tvl.chain_breakdown`: 各链的 TVL 分布
+- `protocol_fees.fees_24h`: 24小时协议费用
+- `protocol_fees.revenue_24h`: 24小时协议收入
 
 **错误响应 / Error Responses**
 - 422: 参数验证错误
@@ -108,7 +116,6 @@ POST /tools/onchain_stablecoins_cex
 
 | 参数 / Parameter | 类型 / Type | 必选 / Required | 默认值 / Default | 说明 / Description |
 |-----------------|------------|----------------|-----------------|-------------------|
-| stablecoin | string | ✗ | null | 稳定币符号，如 USDT, USDC；省略则返回汇总数据 |
 | exchange | string | ✗ | null | CEX 名称，如 binance, coinbase；省略则返回所有交易所 |
 
 **请求示例 / Request Example**
@@ -116,39 +123,47 @@ POST /tools/onchain_stablecoins_cex
 curl -X POST http://localhost:8001/tools/onchain_stablecoins_cex \
   -H "Content-Type: application/json" \
   -d '{
-    "stablecoin": "USDT"
+    "exchange": "binance"
   }'
 ```
 
 **响应格式 / Response Format**
 ```json
 {
-  "data": {
-    "stablecoin": {
-      "symbol": "USDT",
+  "stablecoin_metrics": [
+    {
+      "stablecoin": "USDT",
       "total_supply": 95000000000.0,
       "market_cap": 95000000000.0,
-      "chain_distribution": {
+      "chains": {
         "ethereum": 48000000000.0,
         "tron": 42000000000.0,
         "bsc": 3000000000.0
-      }
-    },
-    "cex_reserves": {
-      "total_usd": 65000000000.0,
-      "exchanges": {
-        "binance": 25000000000.0,
-        "coinbase": 15000000000.0,
-        "kraken": 8000000000.0
-      }
+      },
+      "dominance": 0.62,
+      "timestamp": "2025-01-10T12:00:00Z"
     }
+  ],
+  "cex_reserves": {
+    "exchange": "binance",
+    "total_reserves_usd": 65000000000.0,
+    "token_breakdown": {},
+    "chain_distribution": {},
+    "timestamp": "2025-01-10T12:00:00Z"
   },
   "source_meta": [
     {
       "provider": "defillama",
-      "endpoint": "/stablecoins/USDT",
+      "endpoint": "/stablecoins",
       "as_of_utc": "2025-01-10T12:00:00Z",
       "ttl_seconds": 300,
+      "degraded": false
+    },
+    {
+      "provider": "defillama",
+      "endpoint": "/protocol/binance",
+      "as_of_utc": "2025-01-10T12:00:00Z",
+      "ttl_seconds": 600,
       "degraded": false
     }
   ],
@@ -158,10 +173,8 @@ curl -X POST http://localhost:8001/tools/onchain_stablecoins_cex \
 ```
 
 **主要字段说明 / Field Descriptions**
-- `data.stablecoin.total_supply`: 稳定币总供应量
-- `data.stablecoin.chain_distribution`: 各链的分布情况
-- `data.cex_reserves.total_usd`: CEX 总储备（美元）
-- `data.cex_reserves.exchanges`: 各交易所的储备分布
+- `stablecoin_metrics`: 稳定币指标列表（DefiLlama）
+- `cex_reserves`: CEX 储备汇总（DefiLlama）
 
 **错误响应 / Error Responses**
 - 422: 参数验证错误
@@ -187,7 +200,6 @@ POST /tools/onchain_bridge_volumes
 
 | 参数 / Parameter | 类型 / Type | 必选 / Required | 默认值 / Default | 说明 / Description |
 |-----------------|------------|----------------|-----------------|-------------------|
-| chain | string | ✗ | null | 链名称，如 arbitrum, optimism |
 | bridge | string | ✗ | null | 桥名称，如 stargate, hop；省略则返回汇总数据 |
 
 **请求示例 / Request Example**
@@ -195,37 +207,25 @@ POST /tools/onchain_bridge_volumes
 curl -X POST http://localhost:8001/tools/onchain_bridge_volumes \
   -H "Content-Type: application/json" \
   -d '{
-    "chain": "arbitrum"
+    "bridge": "stargate"
   }'
 ```
 
 **响应格式 / Response Format**
 ```json
 {
-  "chain": "arbitrum",
-  "data": {
+  "bridge_volumes": {
+    "bridge": "stargate",
     "volume_24h": 125000000.0,
     "volume_7d": 850000000.0,
     "volume_30d": 3200000000.0,
-    "bridges": {
-      "native": {
-        "volume_24h": 80000000.0,
-        "volume_7d": 550000000.0
-      },
-      "stargate": {
-        "volume_24h": 25000000.0,
-        "volume_7d": 180000000.0
-      },
-      "across": {
-        "volume_24h": 20000000.0,
-        "volume_7d": 120000000.0
-      }
-    }
+    "chains": ["ethereum", "arbitrum", "optimism"],
+    "timestamp": "2025-01-10T12:00:00Z"
   },
   "source_meta": [
     {
       "provider": "defillama",
-      "endpoint": "/bridges/arbitrum",
+      "endpoint": "/bridge/stargate",
       "as_of_utc": "2025-01-10T12:00:00Z",
       "ttl_seconds": 300,
       "degraded": false
@@ -237,10 +237,12 @@ curl -X POST http://localhost:8001/tools/onchain_bridge_volumes \
 ```
 
 **主要字段说明 / Field Descriptions**
-- `data.volume_24h`: 24小时跨链桥总成交量
-- `data.volume_7d`: 7天跨链桥总成交量
-- `data.volume_30d`: 30天跨链桥总成交量
-- `data.bridges`: 各个桥的成交量明细
+- `bridge_volumes.bridge`: 桥名称（单桥查询时）
+- `bridge_volumes.volume_24h`: 24小时跨链桥总成交量
+- `bridge_volumes.volume_7d`: 7天跨链桥总成交量
+- `bridge_volumes.volume_30d`: 30天跨链桥总成交量（可能为 null）
+- `bridge_volumes.chains`: 该桥支持的链列表（若可用）
+- `bridge_volumes.bridges`: 汇总查询时返回的桥列表
 
 **错误响应 / Error Responses**
 - 422: 参数验证错误
@@ -283,20 +285,25 @@ curl -X POST http://localhost:8001/tools/onchain_dex_liquidity \
 **响应格式 / Response Format**
 ```json
 {
-  "chain": "ethereum",
-  "data": {
-    "total_liquidity_usd": 4500000000.0,
+  "dex_liquidity": {
+    "protocol": "uniswap_v3",
+    "chain": "ethereum",
+    "pool_address": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+    "total_liquidity_usd": 320000000.0,
     "pools": [
       {
         "pool_address": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
-        "token0": "USDC",
-        "token1": "WETH",
-        "fee_tier": "0.05%",
-        "liquidity_usd": 320000000.0,
-        "volume_24h": 185000000.0,
-        "fee_revenue_24h": 92500.0
+        "token0": {"address": "0xa0b8...", "symbol": "USDC", "name": "USD Coin", "decimals": 6},
+        "token1": {"address": "0xC02a...", "symbol": "WETH", "name": "Wrapped Ether", "decimals": 18},
+        "fee_tier": 500,
+        "liquidity": 123456789.0,
+        "tvl_usd": 320000000.0,
+        "volume_usd": 185000000.0,
+        "tx_count": 120345
       }
-    ]
+    ],
+    "ticks": [],
+    "timestamp": "2025-01-10T12:00:00Z"
   },
   "source_meta": [
     {
@@ -313,10 +320,9 @@ curl -X POST http://localhost:8001/tools/onchain_dex_liquidity \
 ```
 
 **主要字段说明 / Field Descriptions**
-- `data.total_liquidity_usd`: 总流动性（美元）
-- `data.pools`: 池子列表，包含地址、代币对、费率等级、流动性、交易量
-- `data.pools[].liquidity_usd`: 单个池子的流动性
-- `data.pools[].volume_24h`: 单个池子的24小时交易量
+- `dex_liquidity.total_liquidity_usd`: 总流动性（美元）
+- `dex_liquidity.pools`: 池子列表，包含地址、代币信息、费率等级、流动性、交易量
+- `dex_liquidity.ticks`: Tick 分布（仅当 `include_ticks` 且指定 `pool_address` 时）
 
 **错误响应 / Error Responses**
 - 422: 参数验证错误
@@ -358,19 +364,23 @@ curl -X POST http://localhost:8001/tools/onchain_governance \
 **响应格式 / Response Format**
 ```json
 {
-  "data": {
-    "snapshot_proposals": [
+  "governance": {
+    "dao": "aave",
+    "total_proposals": 120,
+    "active_proposals": 2,
+    "recent_proposals": [
       {
         "id": "0x123abc...",
         "title": "AIP-42: Enable USDC as collateral",
         "state": "active",
-        "start": "2025-01-05T00:00:00Z",
-        "end": "2025-01-12T00:00:00Z",
+        "start_time": "2025-01-05T00:00:00Z",
+        "end_time": "2025-01-12T00:00:00Z",
+        "choices": ["For", "Against"],
         "scores": [850000, 320000],
-        "choices": ["For", "Against"]
+        "author": "0x9f...b2"
       }
     ],
-    "tally_proposals": []
+    "timestamp": "2025-01-10T12:00:00Z"
   },
   "source_meta": [
     {
@@ -387,10 +397,8 @@ curl -X POST http://localhost:8001/tools/onchain_governance \
 ```
 
 **主要字段说明 / Field Descriptions**
-- `data.snapshot_proposals`: Snapshot 链下提案列表
-- `data.tally_proposals`: Tally 链上提案列表
-- `proposals[].state`: 提案状态（active, closed, pending 等）
-- `proposals[].scores`: 各选项的投票数
+- `governance.dao`: DAO 标识
+- `governance.recent_proposals`: 提案列表，包含状态、选项与票数
 
 **错误响应 / Error Responses**
 - 422: 参数验证错误
@@ -403,90 +411,7 @@ curl -X POST http://localhost:8001/tools/onchain_governance \
 
 ---
 
-### 6. onchain_whale_transfers - 鲸鱼转账监控
-
-**描述**: 使用 Whale Alert API 监控大额链上转账
-
-**端点 / Endpoint**
-```
-POST /tools/onchain_whale_transfers
-```
-
-**请求参数 / Request Parameters**
-
-| 参数 / Parameter | 类型 / Type | 必选 / Required | 默认值 / Default | 说明 / Description |
-|-----------------|------------|----------------|-----------------|-------------------|
-| symbol | string | ✗ | null | 代币符号，如 BTC, ETH；省略则返回多资产视图 |
-| min_value_usd | number | ✗ | 500000 | 最小转账金额（美元） |
-| lookback_hours | integer | ✗ | 24 | 回溯时间窗口（小时） |
-
-**请求示例 / Request Example**
-```bash
-curl -X POST http://localhost:8001/tools/onchain_whale_transfers \
-  -H "Content-Type: application/json" \
-  -d '{
-    "symbol": "BTC",
-    "min_value_usd": 1000000
-  }'
-```
-
-**响应格式 / Response Format**
-```json
-{
-  "symbol": "BTC",
-  "data": {
-    "transfers": [
-      {
-        "hash": "0xabc123...",
-        "from": {
-          "address": "binance",
-          "owner_type": "exchange"
-        },
-        "to": {
-          "address": "unknown",
-          "owner_type": "unknown"
-        },
-        "amount": 1250.5,
-        "amount_usd": 118797500.0,
-        "timestamp": "2025-01-10T10:30:00Z"
-      }
-    ],
-    "total_count": 15,
-    "total_value_usd": 850000000.0
-  },
-  "source_meta": [
-    {
-      "provider": "whale_alert",
-      "endpoint": "/transactions",
-      "as_of_utc": "2025-01-10T12:00:00Z",
-      "ttl_seconds": 300,
-      "degraded": false
-    }
-  ],
-  "warnings": [],
-  "as_of_utc": "2025-01-10T12:00:00Z"
-}
-```
-
-**主要字段说明 / Field Descriptions**
-- `data.transfers`: 转账列表
-- `data.transfers[].from.owner_type`: 发送方类型（exchange, unknown 等）
-- `data.transfers[].amount_usd`: 转账金额（美元）
-- `data.total_count`: 转账总数
-- `data.total_value_usd`: 转账总价值
-
-**错误响应 / Error Responses**
-- 422: 参数验证错误
-- 503: 工具未初始化
-- 500: 内部服务错误
-
-**注意事项 / Notes**
-- 建议配置 WHALE_ALERT_API_KEY 以获得完整覆盖
-- 延迟等级：fast
-
----
-
-### 7. onchain_token_unlocks - 代币解锁时间表
+### 6. onchain_token_unlocks - 代币解锁时间表
 
 **描述**: 查询代币的归属和解锁时间表，数据来自 Token Unlocks
 
@@ -499,42 +424,38 @@ POST /tools/onchain_token_unlocks
 
 | 参数 / Parameter | 类型 / Type | 必选 / Required | 默认值 / Default | 说明 / Description |
 |-----------------|------------|----------------|-----------------|-------------------|
-| symbol | string | ✗ | null | 代币符号；省略则返回热门项目的解锁信息 |
+| token_symbol | string | ✗ | null | 代币符号；省略则返回热门项目的解锁信息 |
 
 **请求示例 / Request Example**
 ```bash
 curl -X POST http://localhost:8001/tools/onchain_token_unlocks \
   -H "Content-Type: application/json" \
   -d '{
-    "symbol": "ARB"
+    "token_symbol": "ARB"
   }'
 ```
 
 **响应格式 / Response Format**
 ```json
 {
-  "symbol": "ARB",
-  "data": {
-    "next_unlock": {
-      "date": "2025-02-15",
-      "amount": 92500000.0,
-      "amount_usd": 185000000.0,
-      "percent_of_supply": 0.925
-    },
+  "token_unlocks": {
+    "token_symbol": "ARB",
     "upcoming_unlocks": [
       {
-        "date": "2025-02-15",
-        "amount": 92500000.0,
-        "category": "team"
-      },
-      {
-        "date": "2025-03-15",
-        "amount": 75000000.0,
-        "category": "investors"
+        "project": "Arbitrum",
+        "token_symbol": "ARB",
+        "unlock_date": "2025-02-15",
+        "unlock_amount": 92500000.0,
+        "unlock_value_usd": 185000000.0,
+        "percentage_of_supply": 0.925,
+        "cliff_type": "cliff",
+        "description": "Team unlock",
+        "source": "token_unlocks"
       }
     ],
-    "total_locked": 3800000000.0,
-    "percent_locked": 38.0
+    "total_locked_value_usd": 3800000000.0,
+    "next_unlock_date": "2025-02-15",
+    "timestamp": "2025-01-10T12:00:00Z"
   },
   "source_meta": [
     {
@@ -551,11 +472,9 @@ curl -X POST http://localhost:8001/tools/onchain_token_unlocks \
 ```
 
 **主要字段说明 / Field Descriptions**
-- `data.next_unlock`: 下次解锁信息
-- `data.next_unlock.amount`: 解锁数量
-- `data.next_unlock.percent_of_supply`: 占总供应量的百分比
-- `data.upcoming_unlocks`: 即将到来的解锁列表
-- `data.total_locked`: 当前锁定总量
+- `token_unlocks.upcoming_unlocks`: 即将到来的解锁列表
+- `token_unlocks.total_locked_value_usd`: 当前锁仓总价值
+- `token_unlocks.next_unlock_date`: 下次解锁日期
 
 **错误响应 / Error Responses**
 - 422: 参数验证错误
@@ -568,7 +487,7 @@ curl -X POST http://localhost:8001/tools/onchain_token_unlocks \
 
 ---
 
-### 8. onchain_activity - 链上活跃度
+### 7. onchain_activity - 链上活跃度
 
 **描述**: 查询链级别的活跃度指标（活跃地址数、交易数、Gas 使用量），数据来自 Etherscan
 
@@ -582,7 +501,6 @@ POST /tools/onchain_activity
 | 参数 / Parameter | 类型 / Type | 必选 / Required | 默认值 / Default | 说明 / Description |
 |-----------------|------------|----------------|-----------------|-------------------|
 | chain | string | ✓ | - | 链名称，如 ethereum, arbitrum, optimism, polygon |
-| window | string | ✗ | 7d | 时间窗口，如 1d, 7d, 30d |
 | protocol | string | ✗ | null | 可选的协议标签，仅用于标记 |
 
 **请求示例 / Request Example**
@@ -590,38 +508,31 @@ POST /tools/onchain_activity
 curl -X POST http://localhost:8001/tools/onchain_activity \
   -H "Content-Type: application/json" \
   -d '{
-    "chain": "ethereum",
-    "window": "7d"
+    "chain": "ethereum"
   }'
 ```
 
 **响应格式 / Response Format**
 ```json
 {
-  "chain": "ethereum",
-  "window": "7d",
-  "data": {
-    "active_addresses": {
-      "total": 850000,
-      "daily_average": 121428,
-      "change_7d": 5.2
-    },
-    "transactions": {
-      "total": 8500000,
-      "daily_average": 1214285,
-      "change_7d": 3.8
-    },
-    "gas_usage": {
-      "total_gwei": 125000000000,
-      "average_gwei_per_tx": 14705882
-    }
+  "activity": {
+    "protocol": null,
+    "chain": "ethereum",
+    "active_addresses_24h": 850000,
+    "active_addresses_7d": 5200000,
+    "transaction_count_24h": 1250000,
+    "transaction_count_7d": 8500000,
+    "gas_used_24h": 125000000000.0,
+    "avg_gas_price_gwei": 22.5,
+    "new_addresses_24h": 95000,
+    "timestamp": "2025-01-10T12:00:00Z"
   },
   "source_meta": [
     {
-      "provider": "etherscan",
-      "endpoint": "/stats/ethereum",
+      "provider": "etherscan_ethereum",
+      "endpoint": "/stats",
       "as_of_utc": "2025-01-10T12:00:00Z",
-      "ttl_seconds": 1800,
+      "ttl_seconds": 300,
       "degraded": false
     }
   ],
@@ -631,10 +542,10 @@ curl -X POST http://localhost:8001/tools/onchain_activity \
 ```
 
 **主要字段说明 / Field Descriptions**
-- `data.active_addresses.total`: 时间窗口内的活跃地址总数
-- `data.active_addresses.daily_average`: 日均活跃地址数
-- `data.transactions.total`: 时间窗口内的交易总数
-- `data.gas_usage.total_gwei`: Gas 总消耗量
+- `activity.active_addresses_24h`: 过去24小时活跃地址数
+- `activity.active_addresses_7d`: 过去7天活跃地址数
+- `activity.transaction_count_24h`: 过去24小时交易数
+- `activity.gas_used_24h`: 过去24小时 Gas 使用量
 
 **错误响应 / Error Responses**
 - 422: 参数验证错误
@@ -647,7 +558,7 @@ curl -X POST http://localhost:8001/tools/onchain_activity \
 
 ---
 
-### 9. onchain_contract_risk - 合约风险分析
+### 8. onchain_contract_risk - 合约风险分析
 
 **描述**: 通过 GoPlus 或 Slither 进行智能合约风险分析
 
@@ -660,42 +571,45 @@ POST /tools/onchain_contract_risk
 
 | 参数 / Parameter | 类型 / Type | 必选 / Required | 默认值 / Default | 说明 / Description |
 |-----------------|------------|----------------|-----------------|-------------------|
-| address | string | ✓ | - | 要分析的合约地址 |
+| contract_address | string | ✓ | - | 要分析的合约地址 |
 | chain | string | ✓ | - | 链名称，如 ethereum, arbitrum, optimism, polygon |
-| provider | string | ✗ | goplus | 分析提供商：goplus 或 slither |
+| provider | string | ✗ | null | 覆盖分析提供商：goplus 或 slither |
 
 **请求示例 / Request Example**
 ```bash
 curl -X POST http://localhost:8001/tools/onchain_contract_risk \
   -H "Content-Type: application/json" \
   -d '{
-    "address": "0x6b175474e89094c44da98b954eedeac495271d0f",
-    "chain": "ethereum"
+    "contract_address": "0x6b175474e89094c44da98b954eedeac495271d0f",
+    "chain": "ethereum",
+    "provider": "goplus"
   }'
 ```
 
 **响应格式 / Response Format**
 ```json
 {
-  "address": "0x6b175474e89094c44da98b954eedeac495271d0f",
-  "chain": "ethereum",
-  "data": {
+  "contract_risk": {
+    "contract_address": "0x6b175474e89094c44da98b954eedeac495271d0f",
+    "chain": "ethereum",
     "risk_score": 15,
     "risk_level": "low",
-    "findings": [
-      {
-        "severity": "low",
-        "category": "centralization",
-        "description": "Contract has owner privileges"
-      }
-    ],
-    "checks": {
-      "is_open_source": true,
-      "is_proxy": false,
-      "has_honeypot": false,
-      "can_take_back_ownership": false,
-      "owner_can_change_balance": false
-    }
+    "provider": "goplus",
+    "is_open_source": true,
+    "is_proxy": false,
+    "is_mintable": false,
+    "can_take_back_ownership": false,
+    "owner_change_balance": false,
+    "hidden_owner": false,
+    "selfdestruct": false,
+    "external_call": false,
+    "buy_tax": 0.0,
+    "sell_tax": 0.0,
+    "is_honeypot": false,
+    "holder_count": 85000,
+    "audit_status": "audited",
+    "auditors": ["OpenZeppelin"],
+    "timestamp": "2025-01-10T12:00:00Z"
   },
   "source_meta": [
     {
@@ -712,10 +626,10 @@ curl -X POST http://localhost:8001/tools/onchain_contract_risk \
 ```
 
 **主要字段说明 / Field Descriptions**
-- `data.risk_score`: 风险评分（0-100）
-- `data.risk_level`: 风险等级（low, medium, high）
-- `data.findings`: 风险发现列表
-- `data.checks`: 安全检查项
+- `contract_risk.risk_score`: 风险评分（0-100）
+- `contract_risk.risk_level`: 风险等级（low, medium, high, critical）
+- `contract_risk.provider`: 数据来源（goplus 或 slither）
+- `contract_risk.is_open_source/is_proxy/...`: 安全检查项
 
 **错误响应 / Error Responses**
 - 422: 参数验证错误
@@ -723,12 +637,13 @@ curl -X POST http://localhost:8001/tools/onchain_contract_risk \
 - 500: 内部服务错误
 
 **注意事项 / Notes**
+- 可通过 `provider` 参数覆盖服务端配置（goplus 或 slither）
 - 使用 GoPlus 时需要 GOPLUS_API_KEY 和 GOPLUS_API_SECRET
 - 延迟等级：slow
 
 ---
 
-### 10. onchain_analytics - CryptoQuant 链上分析
+### 9. onchain_analytics - CryptoQuant 链上分析
 
 **描述**: 由 CryptoQuant 提供支持的链上分析工具：MVRV 比率、SOPR、活跃地址、交易所流量（储备/净流量/流入/流出）、矿工数据（仅 BTC）和衍生品资金费率
 
@@ -742,7 +657,7 @@ POST /tools/onchain_analytics
 | 参数 / Parameter | 类型 / Type | 必选 / Required | 默认值 / Default | 说明 / Description |
 |-----------------|------------|----------------|-----------------|-------------------|
 | symbol | string | ✗ | BTC | 资产符号（BTC, ETH） |
-| include_fields | array[string] | ✗ | ["all"] | 包含的字段：mvrv, sopr, active_addresses, exchange_reserve, exchange_netflow, exchange_inflow, exchange_outflow, miner (仅BTC), funding_rate, all |
+| include_fields | array[string] | ✗ | ["all"] | 包含的字段：active_addresses, mvrv, sopr, exchange_reserve, exchange_netflow, exchange_inflow, exchange_outflow, miner (仅BTC), funding_rate, all |
 | window | string | ✗ | day | 时间窗口：hour 或 day |
 | limit | integer | ✗ | 30 | 数据点数量（1-365） |
 
@@ -764,24 +679,28 @@ curl -X POST http://localhost:8001/tools/onchain_analytics \
   "symbol": "BTC",
   "data": {
     "mvrv": {
-      "current": 2.15,
+      "mvrv_ratio": 2.15,
       "signal": "neutral",
+      "timestamp": "2025-01-10T00:00:00Z",
       "history": [
         {"date": "2025-01-10", "value": 2.15},
         {"date": "2025-01-09", "value": 2.12}
       ]
     },
     "sopr": {
-      "current": 1.05,
+      "sopr": 1.05,
       "signal": "slight_profit",
+      "timestamp": "2025-01-10T00:00:00Z",
       "history": [
         {"date": "2025-01-10", "value": 1.05},
         {"date": "2025-01-09", "value": 1.03}
       ]
     },
     "exchange_netflow": {
-      "current": -25000000.0,
+      "netflow": -25000000.0,
+      "netflow_usd": -25000000.0,
       "signal": "bullish",
+      "timestamp": "2025-01-10T00:00:00Z",
       "history": [
         {"date": "2025-01-10", "value": -25000000.0},
         {"date": "2025-01-09", "value": -18000000.0}
@@ -812,6 +731,8 @@ curl -X POST http://localhost:8001/tools/onchain_analytics \
 - `data.exchange_netflow`: 交易所净流量
   - 正值: 流入（看跌信号）
   - 负值: 流出（看涨信号）
+- `data.exchange_inflow`: 交易所流入（USD 及历史）
+- `data.exchange_outflow`: 交易所流出（USD 及历史）
 - `data.miner`: 矿工数据（仅 BTC）
   - `reserve`: 矿工储备
   - `outflow`: 矿工流出

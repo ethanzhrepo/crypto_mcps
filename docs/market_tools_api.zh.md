@@ -324,36 +324,10 @@ curl -X POST http://localhost:8001/tools/etf_flows_holdings \
   "dataset": "bitcoin",
   "flows": [
     {
-      "data": {
-        "date": "2025-01-10",
-        "total_net_flow": 325000000.0,
-        "etf_flows": {
-          "IBIT": 145000000.0,
-          "FBTC": 95000000.0,
-          "GBTC": -25000000.0,
-          "ARKB": 65000000.0,
-          "BITB": 45000000.0
-        },
-        "cumulative_flow": 18500000000.0
-      }
+      "data": {}
     }
   ],
-  "holdings": [
-    {
-      "data": {
-        "date": "2025-01-10",
-        "total_btc": 875000.5,
-        "total_value_usd": 83125000000.0,
-        "etf_holdings": {
-          "GBTC": 285000.2,
-          "IBIT": 215000.8,
-          "FBTC": 145000.3,
-          "ARKB": 95000.1,
-          "BITB": 75000.0
-        }
-      }
-    }
-  ],
+  "holdings": [],
   "source_meta": [
     {
       "provider": "farside",
@@ -370,14 +344,8 @@ curl -X POST http://localhost:8001/tools/etf_flows_holdings \
 
 **主要字段说明 / Field Descriptions**
 - `dataset`: 数据集类型（bitcoin 或 ethereum）
-- `flows`: 资金流向数据
-  - `total_net_flow`: 总净流入（USD）
-  - `etf_flows`: 各 ETF 的资金流向
-  - `cumulative_flow`: 累计资金流向
-- `holdings`: 持仓数据
-  - `total_btc/eth`: 总持仓量
-  - `total_value_usd`: 总持仓价值
-  - `etf_holdings`: 各 ETF 的持仓量
+- `flows`: Farside 解析后的资金流向行（字段随数据集变化）
+- `holdings`: 持仓行数据（未配置数据源时可能为空）
 - `source_meta`: 数据来源元信息
 
 **错误响应 / Error Responses**
@@ -386,13 +354,13 @@ curl -X POST http://localhost:8001/tools/etf_flows_holdings \
 - 500: 内部服务错误
 
 **注意事项 / Notes**
-- 持仓数据需要配置数据源；资金流向为尽力而为的解析
+- 默认未配置持仓数据源；请求 `holdings`/`all` 时将返回空持仓并给出 warning
 - 延迟等级：中等 (medium)
 - 数据来源：Farside 等公开数据
 
 ---
 
-### 4. cex_netflow_reserves - CEX 储备与净流量
+### 4. cex_netflow_reserves - CEX 储备与大额转账
 
 **描述**: 来自 DefiLlama 的 CEX 储备数据，可选包含 Whale Alert 大额转账
 
@@ -656,8 +624,7 @@ curl -X POST http://localhost:8001/tools/stablecoin_health \
   "symbol": "USDC",
   "stablecoins": [
     {
-      "symbol": "USDC",
-      "name": "USD Coin",
+      "stablecoin": "USDC",
       "total_supply": 25000000000.0,
       "market_cap": 25000000000.0,
       "chains": {
@@ -670,8 +637,6 @@ curl -X POST http://localhost:8001/tools/stablecoin_health \
         "solana": 1000000000.0
       },
       "dominance": 0.285,
-      "price": 1.0002,
-      "price_deviation_pct": 0.02,
       "timestamp": "2025-01-10T12:00:00Z"
     }
   ],
@@ -695,8 +660,6 @@ curl -X POST http://localhost:8001/tools/stablecoin_health \
   - `market_cap`: 市值
   - `chains`: 各链分布详情
   - `dominance`: 市场份额（相对所有稳定币）
-  - `price`: 当前价格
-  - `price_deviation_pct`: 与锚定价格的偏差百分比
 - `source_meta`: 数据来源元信息
 
 **错误响应 / Error Responses**
@@ -742,34 +705,15 @@ curl -X POST http://localhost:8001/tools/options_vol_skew \
 {
   "symbol": "BTC",
   "data": {
-    "deribit": {
+    "summary": {
       "dvol_index": 68.5,
-      "atm_iv_30d": 65.2,
-      "atm_iv_60d": 62.8,
-      "atm_iv_90d": 60.5,
-      "skew_25delta": 5.8,
-      "put_call_ratio": 1.35,
-      "total_oi_usd": 8500000000.0,
-      "total_volume_24h_usd": 1200000000.0,
-      "iv_rank": 58.5,
-      "expiries": [
-        {
-          "expiry_date": "2025-01-31",
-          "atm_iv": 65.2,
-          "skew_25delta": 5.8,
-          "put_call_ratio": 1.32,
-          "total_oi": 2500000000.0
-        }
-      ],
-      "timestamp": "2025-01-10T12:00:00Z"
+      "dvol_timestamp": "2025-01-10T12:00:00Z"
     },
-    "okx": {
-      "atm_iv_30d": 66.5,
-      "skew_25delta": 6.2,
-      "put_call_ratio": 1.28,
-      "total_oi_usd": 3200000000.0,
-      "timestamp": "2025-01-10T12:00:00Z"
-    }
+    "deribit": {
+      "volatility_index": {}
+    },
+    "okx": {},
+    "binance": {}
   },
   "source_meta": [
     {
@@ -786,15 +730,12 @@ curl -X POST http://localhost:8001/tools/options_vol_skew \
 ```
 
 **主要字段说明 / Field Descriptions**
-- `data.<provider>`: 各数据源的期权数据
-  - `dvol_index`: Deribit 波动率指数（仅 Deribit）
-  - `atm_iv_*`: ATM 隐含波动率（30/60/90天）
-  - `skew_25delta`: 25 delta 偏度
-  - `put_call_ratio`: 看跌/看涨比率
-  - `total_oi_usd`: 总未平仓量（USD）
-  - `total_volume_24h_usd`: 24小时交易量（USD）
-  - `iv_rank`: IV 百分位
-  - `expiries`: 各到期日详情
+- `data.summary`: 派生指标（尽力而为）
+  - `dvol_index`: Deribit DVOL 值
+  - `dvol_timestamp`: DVOL 时间戳
+- `data.<provider>`: 各数据源的原始响应（结构因数据源/到期日而异）
+  - `deribit.volatility_index`: 波动率指数响应
+  - `deribit.instruments`: 提供 `expiry` 时返回筛选后的合约列表
 - `source_meta`: 数据来源元信息
 
 **错误响应 / Error Responses**
@@ -839,44 +780,44 @@ curl -X POST http://localhost:8001/tools/blockspace_mev \
 {
   "chain": "ethereum",
   "mev_boost": {
-    "total_blocks": 15680,
-    "mev_boost_blocks": 14850,
-    "mev_boost_rate": 0.947,
-    "total_value_eth": 8520.5,
-    "total_value_usd": 20450000.0,
-    "avg_value_per_block_eth": 0.574,
+    "builder_blocks_received": [],
+    "proposer_payload_delivered": [],
+    "summary": {
+      "builder_blocks_count": 0,
+      "proposer_blocks_count": 0,
+      "total_builder_value_wei": 0,
+      "total_proposer_value_wei": 0,
+      "total_proposer_value_eth": 0.0,
+      "total_proposer_value_usd": 0.0,
+      "avg_proposer_value_eth": 0.0,
+      "avg_proposer_value_usd": 0.0
+    },
     "top_builders": [
       {
-        "builder": "beaverbuild",
-        "blocks": 5200,
-        "value_eth": 3150.2,
-        "share": 0.35
-      },
-      {
-        "builder": "flashbots",
-        "blocks": 4800,
-        "value_eth": 2850.1,
-        "share": 0.323
+        "builder": "0xabc...",
+        "blocks": 120,
+        "value_wei": 4500000000000000000,
+        "share": 0.25
       }
     ],
     "top_relays": [
       {
-        "relay": "ultra_sound_relay",
-        "blocks": 6500,
-        "value_eth": 3850.5,
-        "share": 0.438
+        "relay": "flashbots",
+        "blocks": 480,
+        "share": 1.0
       }
     ],
     "recent_blocks": [
       {
         "block_number": 18950000,
+        "value_wei": 850000000000000000,
         "value_eth": 0.85,
-        "builder": "beaverbuild",
-        "relay": "ultra_sound_relay",
+        "value_usd": 2040.0,
+        "builder": "0xabc...",
+        "relay": "flashbots",
         "timestamp": "2025-01-10T11:58:00Z"
       }
-    ],
-    "timestamp": "2025-01-10T12:00:00Z"
+    ]
   },
   "gas_oracle": {
     "safe_gas_price": 25,
@@ -892,10 +833,17 @@ curl -X POST http://localhost:8001/tools/blockspace_mev \
   },
   "source_meta": [
     {
-      "provider": "mevboost.pics",
-      "endpoint": "/",
+      "provider": "flashbots",
+      "endpoint": "/relay/v1/data/bidtraces/builder_blocks_received",
       "as_of_utc": "2025-01-10T12:00:00Z",
-      "ttl_seconds": 300,
+      "ttl_seconds": 30,
+      "version": "v3"
+    },
+    {
+      "provider": "flashbots",
+      "endpoint": "/relay/v1/data/bidtraces/proposer_payload_delivered",
+      "as_of_utc": "2025-01-10T12:00:00Z",
+      "ttl_seconds": 30,
       "version": "v3"
     }
   ],
@@ -905,14 +853,13 @@ curl -X POST http://localhost:8001/tools/blockspace_mev \
 ```
 
 **主要字段说明 / Field Descriptions**
-- `mev_boost`: MEV-Boost 统计数据
-  - `total_blocks`: 总区块数
-  - `mev_boost_blocks`: MEV-Boost 区块数
-  - `mev_boost_rate`: MEV-Boost 使用率
-  - `total_value_eth/usd`: MEV 总价值
-  - `top_builders`: 顶级构建者列表
-  - `top_relays`: 顶级中继列表
-  - `recent_blocks`: 最近区块列表
+- `mev_boost`: MEV-Boost 原始数据与派生指标
+  - `builder_blocks_received`: Flashbots builder blocks 列表
+  - `proposer_payload_delivered`: Flashbots proposer payload 列表
+  - `summary`: 汇总统计与总价值（wei/eth/usd）
+  - `top_builders`: 按交付 payload 统计的 builders
+  - `top_relays`: 按交付 payload 统计的 relays
+  - `recent_blocks`: 最近交付的 payload 列表
 - `gas_oracle`: Gas 价格预言机数据
   - `safe/propose/fast_gas_price`: 安全/标准/快速 Gas 价格（Gwei）
   - `base_fee`: 基础费用
@@ -926,6 +873,7 @@ curl -X POST http://localhost:8001/tools/blockspace_mev \
 
 **注意事项 / Notes**
 - Gas oracle 需要 ETHERSCAN_API_KEY（以太坊主网）
+- USD 价值字段会在可用时使用 Etherscan ETH 价格计算
 - 延迟等级：快速 (fast)
 - 当前仅支持以太坊主网
 
@@ -961,49 +909,11 @@ curl -X POST http://localhost:8001/tools/hyperliquid_market \
 {
   "symbol": "BTC",
   "data": {
-    "funding": {
-      "funding_rate": 0.00015,
-      "funding_rate_annual": 0.1314,
-      "next_funding_time": "2025-01-10T16:00:00Z",
-      "mark_price": 95000.0,
-      "index_price": 94995.0,
-      "timestamp": "2025-01-10T12:00:00Z"
-    },
-    "open_interest": {
-      "open_interest": 2500000000.0,
-      "oi_change_24h": 125000000.0,
-      "oi_change_percent_24h": 5.26,
-      "timestamp": "2025-01-10T12:00:00Z"
-    },
-    "orderbook": {
-      "bids": [
-        {"price": 94995.0, "size": 5.25},
-        {"price": 94990.0, "size": 8.50}
-      ],
-      "asks": [
-        {"price": 95005.0, "size": 4.75},
-        {"price": 95010.0, "size": 7.25}
-      ],
-      "mid_price": 95000.0,
-      "spread_bps": 1.05,
-      "timestamp": "2025-01-10T12:00:00Z"
-    },
-    "trades": [
-      {
-        "price": 95000.0,
-        "size": 2.5,
-        "side": "buy",
-        "timestamp": 1704888000000
-      }
-    ],
-    "asset_contexts": {
-      "mark_price": 95000.0,
-      "oracle_price": 94995.0,
-      "funding_rate": 0.00015,
-      "open_interest": 2500000000.0,
-      "volume_24h": 8500000000.0,
-      "timestamp": "2025-01-10T12:00:00Z"
-    }
+    "funding": {},
+    "open_interest": {},
+    "orderbook": {},
+    "trades": [],
+    "asset_contexts": {}
   },
   "source_meta": [
     {
@@ -1020,19 +930,7 @@ curl -X POST http://localhost:8001/tools/hyperliquid_market \
 ```
 
 **主要字段说明 / Field Descriptions**
-- `data.funding`: 资金费率数据
-  - `funding_rate`: 当前费率
-  - `funding_rate_annual`: 年化费率
-  - `next_funding_time`: 下次结算时间
-- `data.open_interest`: 未平仓量数据
-  - `open_interest`: 未平仓量（USD）
-  - `oi_change_24h`: 24小时变化
-- `data.orderbook`: 订单簿数据
-  - `bids/asks`: 买卖盘
-  - `mid_price`: 中间价
-  - `spread_bps`: 买卖价差（基点）
-- `data.trades`: 最近成交记录
-- `data.asset_contexts`: 资产上下文信息
+- `data.<field>`: Hyperliquid 各字段的原始响应
 - `source_meta`: 数据来源元信息
 
 **错误响应 / Error Responses**

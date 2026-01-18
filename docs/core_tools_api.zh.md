@@ -11,10 +11,16 @@
 - **请求格式**: `Content-Type: application/json`
 - **响应格式**: JSON
 
-所有响应都包含以下通用字段：
+大多数响应包含以下通用字段：
 - `source_meta`: 数据来源元信息数组
 - `warnings`: 警告信息数组
 - `as_of_utc`: 数据时间戳（ISO 8601）
+
+例外：
+- `grok_social_trace` 仅返回分析字段与 `as_of_utc`（不包含 `source_meta`/`warnings`）
+- `draw_chart` 的告警位于 `chart.warnings` 中，且不包含 `source_meta`
+
+部分工具在多数据源冲突时会返回 `conflicts` 字段。
 
 ## 工具列表
 
@@ -86,6 +92,7 @@ curl -X POST http://localhost:8001/tools/crypto_overview \
       "degraded": false
     }
   ],
+  "conflicts": [],
   "warnings": [],
   "as_of_utc": "2025-01-10T12:00:00Z"
 }
@@ -100,6 +107,7 @@ curl -X POST http://localhost:8001/tools/crypto_overview \
 - `data.sector`: 板块分类信息
 - `data.dev_activity`: 开发活跃度（需要 GITHUB_TOKEN）
 - `source_meta`: 数据来源元信息
+- `conflicts`: 多数据源冲突（如有）
 - `warnings`: 警告信息列表
 
 **错误响应 / Error Responses**
@@ -177,6 +185,7 @@ curl -X POST http://localhost:8001/tools/market_microstructure \
       "version": "v3"
     }
   ],
+  "conflicts": [],
   "warnings": [],
   "as_of_utc": "2025-01-10T12:00:00Z"
 }
@@ -192,6 +201,7 @@ curl -X POST http://localhost:8001/tools/market_microstructure \
 - `data.taker_flow`: 主动买卖流分析
 - `data.slippage`: 滑点估算
 - `source_meta`: 数据来源元信息
+- `conflicts`: 多数据源冲突（如有）
 - `warnings`: 警告信息列表
 
 **错误响应 / Error Responses**
@@ -202,6 +212,7 @@ curl -X POST http://localhost:8001/tools/market_microstructure \
 **注意事项 / Notes**
 - 无特殊 API 密钥要求
 - 延迟等级：快速 (fast)
+- 当请求订单簿相关字段时，`orderbook_depth` 会被强制提升到至少 100
 
 ---
 
@@ -267,6 +278,7 @@ curl -X POST http://localhost:8001/tools/derivatives_hub \
       "version": "v3"
     }
   ],
+  "conflicts": [],
   "warnings": [],
   "as_of_utc": "2025-01-10T12:00:00Z"
 }
@@ -283,6 +295,7 @@ curl -X POST http://localhost:8001/tools/derivatives_hub \
 - `data.options_metrics`: 期权市场指标
 - `data.borrow_rates`: 借贷利率
 - `source_meta`: 数据来源元信息
+- `conflicts`: 多数据源冲突（如有）
 - `warnings`: 警告信息列表
 
 **错误响应 / Error Responses**
@@ -406,7 +419,7 @@ curl -X POST http://localhost:8001/tools/web_research_search \
   -H "Content-Type: application/json" \
   -d '{
     "query": "BTC spot ETF approval",
-    "top_k": 5
+    "limit": 5
   }'
 ```
 
@@ -484,7 +497,7 @@ POST /tools/grok_social_trace
 curl -X POST http://localhost:8001/tools/grok_social_trace \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Some rumor text"
+    "keyword_prompt": "Some rumor text"
   }'
 ```
 
@@ -564,7 +577,7 @@ POST /tools/macro_hub
 curl -X POST http://localhost:8001/tools/macro_hub \
   -H "Content-Type: application/json" \
   -d '{
-    "include_fields": ["fear_greed", "dxy"]
+    "mode": "fear_greed"
   }'
 ```
 

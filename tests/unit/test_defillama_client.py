@@ -319,8 +319,8 @@ class TestDefiLlamaClient:
         result = client.transform(raw_data, "stablecoins")
 
         assert len(result) == 2
-        assert result[0]["symbol"] == "USDT"
-        assert result[0]["circulating_supply"] == 80000000000
+        assert result[0]["stablecoin"] == "USDT"
+        assert result[0]["total_supply"] == 80000000000
 
     def test_transform_cex_reserves(self, client):
         """测试CEX储备数据转换"""

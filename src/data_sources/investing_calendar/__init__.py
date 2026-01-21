@@ -6,7 +6,9 @@ Investing.com 财经日历爬虫
 - 经济数据发布（CPI、非农、GDP等）
 - 财报季关键事件
 """
+import asyncio
 import json
+import random
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -23,6 +25,9 @@ class InvestingCalendarClient(BaseDataSource):
     """Investing.com 财经日历客户端"""
 
     BASE_URL = "https://www.investing.com"
+    CACHE_TTL_SECONDS = 7 * 24 * 60 * 60  # 7 days
+    DEFAULTS_TTL_SECONDS = 24 * 60 * 60  # 24 hours
+    MAX_RETRY_ATTEMPTS = 3
 
     def __init__(
         self,
@@ -42,6 +47,13 @@ class InvestingCalendarClient(BaseDataSource):
         # JSON文件缓存配置
         self.cache_enabled = cache_enabled
         self.cache_file = cache_file or "cache/calendar_events.json"
+        # XHR defaults cache (in-memory)
+        self._defaults_cache: Optional[Dict[str, str]] = None
+        self._defaults_cache_expires_at: Optional[datetime] = None
+        self._defaults_lock = asyncio.Lock()
+        # XHR concurrency + cooldown
+        self._xhr_semaphore = asyncio.Semaphore(2)
+        self._cooldown_until: Optional[datetime] = None
 
     def _get_headers(self) -> Dict[str, str]:
         """获取请求头（模拟浏览器）"""
@@ -99,6 +111,97 @@ class InvestingCalendarClient(BaseDataSource):
 
         return payload
 
+    def _defaults_cache_fresh(self) -> bool:
+        if not self._defaults_cache or not self._defaults_cache_expires_at:
+            return False
+        return datetime.utcnow() < self._defaults_cache_expires_at
+
+    def _compute_backoff(self, attempt: int, retry_after: Optional[str] = None) -> float:
+        base = min(2 ** attempt, 10) + random.uniform(0.0, 0.5)
+        if retry_after:
+            try:
+                return max(base, float(retry_after))
+            except ValueError:
+                return base
+        return base
+
+    async def _request_with_retry(
+        self,
+        session: aiohttp.ClientSession,
+        method: str,
+        url: str,
+        *,
+        headers: Optional[Dict[str, str]] = None,
+        data: Optional[Any] = None,
+        max_attempts: Optional[int] = None,
+        logger: Optional[Any] = None,
+    ) -> Optional[str]:
+        attempts = max_attempts or self.MAX_RETRY_ATTEMPTS
+        for attempt in range(1, attempts + 1):
+            try:
+                async with session.request(method, url, data=data, headers=headers) as response:
+                    if response.status == 429:
+                        retry_after = response.headers.get("Retry-After")
+                        delay = self._compute_backoff(attempt, retry_after)
+                        self._cooldown_until = datetime.utcnow() + timedelta(seconds=delay)
+                        if logger:
+                            logger.warning(
+                                "calendar_rate_limited",
+                                status=429,
+                                delay_seconds=round(delay, 2),
+                                attempt=attempt,
+                            )
+                        if attempt == attempts:
+                            return None
+                        await asyncio.sleep(delay)
+                        continue
+                    response.raise_for_status()
+                    return await response.text()
+            except aiohttp.ClientResponseError as e:
+                if e.status in {500, 502, 503, 504} and attempt < attempts:
+                    delay = self._compute_backoff(attempt)
+                    await asyncio.sleep(delay)
+                    continue
+                if logger:
+                    logger.warning("calendar_request_failed", error=str(e), attempt=attempt)
+                if attempt == attempts:
+                    return None
+            except Exception as e:
+                if logger:
+                    logger.warning("calendar_request_exception", error=str(e), attempt=attempt)
+                if attempt == attempts:
+                    return None
+                delay = self._compute_backoff(attempt)
+                await asyncio.sleep(delay)
+        return None
+
+    async def _get_xhr_defaults(
+        self, session: aiohttp.ClientSession, base_url: str, logger
+    ) -> Dict[str, str]:
+        if self._defaults_cache_fresh():
+            return self._defaults_cache or {"timeZone": "55", "timeFilter": "timeRemain"}
+
+        async with self._defaults_lock:
+            if self._defaults_cache_fresh():
+                return self._defaults_cache or {"timeZone": "55", "timeFilter": "timeRemain"}
+
+            base_html = await self._request_with_retry(
+                session,
+                "GET",
+                base_url,
+                max_attempts=2,
+                logger=logger,
+            )
+            if base_html:
+                defaults = self._extract_xhr_defaults(base_html)
+                self._defaults_cache = defaults
+                self._defaults_cache_expires_at = datetime.utcnow() + timedelta(
+                    seconds=self.DEFAULTS_TTL_SECONDS
+                )
+                return defaults
+
+        return {"timeZone": "55", "timeFilter": "timeRemain"}
+
     async def _fetch_html_with_xhr(
         self,
         date_str: str,
@@ -113,55 +216,56 @@ class InvestingCalendarClient(BaseDataSource):
         timeout = aiohttp.ClientTimeout(total=20)
         headers = self._get_headers()
 
+        if self._cooldown_until and datetime.utcnow() < self._cooldown_until:
+            logger.warning("calendar_cooldown_active", until=self._cooldown_until.isoformat())
+            return None
+
         try:
-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-                # Step 1: 获取基础页面以提取默认参数
-                defaults = {"timeZone": "55", "timeFilter": "timeRemain"}
-                try:
-                    async with session.get(base_url) as response:
-                        response.raise_for_status()
-                        base_html = await response.text()
-                    defaults = self._extract_xhr_defaults(base_html)
-                except Exception as e:
-                    logger.warning(f"Failed to fetch calendar defaults: {e}")
+            async with self._xhr_semaphore:
+                async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                    # Step 1: 获取基础页面以提取默认参数（带缓存）
+                    defaults = await self._get_xhr_defaults(session, base_url, logger)
 
-                # Step 2: 构建 POST payload
-                payload = self._build_xhr_payload(
-                    date_from=date_str,
-                    date_to=date_str,
-                    min_importance=min_importance,
-                    defaults=defaults,
-                )
+                    # Step 2: 构建 POST payload
+                    payload = self._build_xhr_payload(
+                        date_from=date_str,
+                        date_to=date_str,
+                        min_importance=min_importance,
+                        defaults=defaults,
+                    )
 
-                # Step 3: POST 到 XHR 端点
-                post_headers = {
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Referer": base_url,
-                    "Origin": self.base_url,
-                }
+                    # Step 3: POST 到 XHR 端点
+                    post_headers = {
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Referer": base_url,
+                        "Origin": self.base_url,
+                    }
 
-                async with session.post(
-                    f"{base_url}Service/getCalendarFilteredData",
-                    data=payload,
-                    headers=post_headers,
-                ) as response:
-                    response.raise_for_status()
-                    raw_text = await response.text()
+                    raw_text = await self._request_with_retry(
+                        session,
+                        "POST",
+                        f"{base_url}Service/getCalendarFilteredData",
+                        data=payload,
+                        headers=post_headers,
+                        logger=logger,
+                    )
+                    if not raw_text:
+                        return None
 
-                # Step 4: 解析 JSON 响应
-                try:
-                    payload_json = json.loads(raw_text)
-                except json.JSONDecodeError:
-                    logger.warning("XHR calendar response is not JSON")
-                    return None
+                    # Step 4: 解析 JSON 响应
+                    try:
+                        payload_json = json.loads(raw_text)
+                    except json.JSONDecodeError:
+                        logger.warning("XHR calendar response is not JSON")
+                        return None
 
-                html = payload_json.get("data") if isinstance(payload_json, dict) else None
-                if not html:
-                    logger.warning("XHR calendar response missing HTML data")
-                    return None
+                    html = payload_json.get("data") if isinstance(payload_json, dict) else None
+                    if not html:
+                        logger.warning("XHR calendar response missing HTML data")
+                        return None
 
-                # Step 5: 包装 <tr> 片段为完整 table（便于 BeautifulSoup 解析）
-                return f'<table id="economicCalendarData">{html}</table>'
+                    # Step 5: 包装 <tr> 片段为完整 table（便于 BeautifulSoup 解析）
+                    return f'<table id="economicCalendarData">{html}</table>'
 
         except Exception as e:
             logger.error(f"XHR calendar fetch failed for {date_str}: {e}")
@@ -209,11 +313,35 @@ class InvestingCalendarClient(BaseDataSource):
         except Exception as e:
             logger.warning(f"Failed to save calendar cache: {e}")
 
+    def _parse_fetched_at(self, fetched_at: str) -> Optional[datetime]:
+        """解析缓存时间戳"""
+        if not fetched_at:
+            return None
+        try:
+            if fetched_at.endswith("Z"):
+                return datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
+            return datetime.fromisoformat(fetched_at)
+        except Exception:
+            return None
+
+    def _is_cache_fresh(self, fetched_at: Optional[str]) -> bool:
+        """判断缓存是否仍然新鲜"""
+        parsed = self._parse_fetched_at(fetched_at or "")
+        if not parsed:
+            return False
+        if parsed.tzinfo:
+            now = datetime.now(tz=parsed.tzinfo)
+        else:
+            now = datetime.utcnow()
+        return (now - parsed).total_seconds() <= self.CACHE_TTL_SECONDS
+
     def _get_cached_events_from_file(
-        self, cache: Dict[str, Any], date_str: str
+        self, cache: Dict[str, Any], date_str: str, allow_stale: bool = False
     ) -> List[CalendarEvent]:
         """从文件缓存读取指定日期的事件列表"""
         cached = cache.get(date_str, {})
+        if not allow_stale and not self._is_cache_fresh(cached.get("fetched_at")):
+            return []
         events_data = cached.get("events", [])
         if not isinstance(events_data, list):
             return []
@@ -434,17 +562,15 @@ class InvestingCalendarClient(BaseDataSource):
         for i in range(days + 1):
             query_date = today + timedelta(days=i)
             date_str = query_date.strftime("%Y-%m-%d")
-            is_today = query_date == today
-
             # 确定缓存 key 和 TTL
             cache_key = f"calendar:{date_str}:{min_importance}"
-            ttl = 600 if is_today else 21600  # 今天10分钟，未来6小时
+            ttl = self.CACHE_TTL_SECONDS  # 每天缓存7天
 
             try:
                 events: List[Dict] = []
 
                 # Step 1: 尝试 Redis 缓存
-                if self.redis_client and not is_today:
+                if self.redis_client:
                     try:
                         cached = await self.redis_client.get(cache_key)
                         if cached:
@@ -454,14 +580,14 @@ class InvestingCalendarClient(BaseDataSource):
                         logger.warning(f"Redis read failed for {date_str}: {e}")
 
                 # Step 2: 尝试文件缓存（如果 Redis 未命中且不是今天）
-                if not events and not is_today:
+                if not events:
                     cached_events = self._get_cached_events_from_file(file_cache, date_str)
                     if cached_events:
                         events = [e.model_dump() for e in cached_events]
                         logger.info(f"File cache hit for {date_str}")
 
-                # Step 3: 如果缓存未命中或者是今天，则拉取新数据
-                if not events or is_today:
+                # Step 3: 如果缓存未命中，则拉取新数据
+                if not events:
                     # 尝试 XHR（快速：2-3秒）
                     html = await self._fetch_html_with_xhr(
                         date_str=date_str,
@@ -501,7 +627,9 @@ class InvestingCalendarClient(BaseDataSource):
                     else:
                         # 3d. 所有拉取方法都失败，尝试使用旧的文件缓存
                         if not events:
-                            cached_events = self._get_cached_events_from_file(file_cache, date_str)
+                            cached_events = self._get_cached_events_from_file(
+                                file_cache, date_str, allow_stale=True
+                            )
                             if cached_events:
                                 events = [e.model_dump() for e in cached_events]
                                 logger.info(f"Using stale file cache for {date_str}")
@@ -535,7 +663,7 @@ class InvestingCalendarClient(BaseDataSource):
         meta = SourceMetaBuilder.build(
             provider="investing_calendar",
             endpoint="/economic-calendar/",
-            ttl_seconds=600,
+            ttl_seconds=self.CACHE_TTL_SECONDS,
         )
 
         return all_events, meta

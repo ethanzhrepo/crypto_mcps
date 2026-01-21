@@ -324,19 +324,39 @@ POST /tools/crypto_news_search
 |-----------------|------------|----------------|-----------------|-------------------|
 | query | string | ✗ | null | 搜索关键词（可选） |
 | symbol | string | ✗ | null | 币种符号（可选），如 BTC、ETH |
-| limit | integer | ✗ | 20 | 结果数量 |
+| limit | integer | ✗ | 20 | 结果数量（1-500） |
+| offset | integer | ✗ | 0 | 分页偏移量，用于获取更多结果 |
 | sort_by | string | ✗ | timestamp | 排序字段：timestamp（最新优先）或 score（相关性优先） |
 | time_range | string | ✗ | null | 时间范围过滤: past_24h/day, past_week/7d, past_month/30d, past_year 等 |
-| start_time | string | ✗ | null | 起始时间（ISO格式，优先级高于 time_range），如 2025-01-01T00:00:00Z |
+| start_time | integer | ✗ | null | 起始时间（Unix 毫秒时间戳，优先级高于 time_range），如 1735689600000 |
 
 **请求示例 / Request Example**
 ```bash
+# 基础请求
 curl -X POST http://localhost:8001/tools/crypto_news_search \
   -H "Content-Type: application/json" \
   -d '{
     "symbol": "BTC",
     "limit": 20,
     "time_range": "24h"
+  }'
+
+# 分页请求 - 第一页
+curl -X POST http://localhost:8001/tools/crypto_news_search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "btc",
+    "limit": 100,
+    "offset": 0
+  }'
+
+# 分页请求 - 第二页（使用上一页返回的 next_offset）
+curl -X POST http://localhost:8001/tools/crypto_news_search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "btc",
+    "limit": 100,
+    "offset": 100
   }'
 ```
 
@@ -355,7 +375,9 @@ curl -X POST http://localhost:8001/tools/crypto_news_search \
       "published_at": "2025-01-10T10:30:00Z"
     }
   ],
-  "total_results": 156,
+  "total_results": 100,
+  "next_offset": 100,
+  "has_more": true,
   "source_meta": [
     {
       "provider": "telegram_scraper",
@@ -379,7 +401,9 @@ curl -X POST http://localhost:8001/tools/crypto_news_search \
   - `snippet`: 结果摘要
   - `relevance_score`: 相关性评分
   - `published_at`: 发布时间
-- `total_results`: 总结果数
+- `total_results`: 本次返回的结果数
+- `next_offset`: 下一页的偏移量（如果为 null 表示没有更多结果）
+- `has_more`: 是否还有更多结果可获取
 - `source_meta`: 数据来源元信息
 - `warnings`: 警告信息列表
 
@@ -391,6 +415,8 @@ curl -X POST http://localhost:8001/tools/crypto_news_search \
 **注意事项 / Notes**
 - 需要配置 TELEGRAM_SCRAPER_URL
 - 延迟等级：快速 (fast)
+- 支持分页获取 200+ 条结果：设置 `limit=100`，然后使用返回的 `next_offset` 获取下一页
+- 单次请求最大 limit 为 500
 
 ---
 

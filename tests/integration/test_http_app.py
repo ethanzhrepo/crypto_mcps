@@ -335,6 +335,46 @@ async def test_crypto_news_search_endpoint_live_requires_results(rest_client, re
 
 
 @pytest.mark.asyncio
+async def test_crypto_news_search_pagination_live(rest_client, record_response):
+    """POST /tools/crypto_news_search 分页测试：offset 参数应正确工作"""
+    # Page 1
+    payload_page1 = {"query": "btc", "limit": 10, "offset": 0}
+    response1 = await rest_client.post("/tools/crypto_news_search", json=payload_page1)
+    assert response1.status_code == 200
+
+    body1 = response1.json()
+    results1 = body1.get("results", [])
+    assert isinstance(results1, list)
+
+    # Verify pagination fields exist in response
+    assert "next_offset" in body1
+    assert "has_more" in body1
+
+    # If we got full page, has_more should be True and next_offset should be 10
+    if len(results1) == 10:
+        assert body1["has_more"] is True
+        assert body1["next_offset"] == 10
+
+        # Page 2
+        payload_page2 = {"query": "btc", "limit": 10, "offset": 10}
+        response2 = await rest_client.post("/tools/crypto_news_search", json=payload_page2)
+        assert response2.status_code == 200
+
+        body2 = response2.json()
+        results2 = body2.get("results", [])
+        assert isinstance(results2, list)
+
+        # Verify page 2 results are different from page 1 (if we got results)
+        if results1 and results2:
+            urls1 = {r.get("url") for r in results1}
+            urls2 = {r.get("url") for r in results2}
+            # At least one result should be different (no overlap)
+            assert not urls1 & urls2, "Page 2 should have different results than page 1"
+
+    record_response("crypto_news_search_pagination", response1)
+
+
+@pytest.mark.asyncio
 async def test_web_research_all_sources_unavailable(rest_client, record_response):
     """所有新闻源不可用时应返回明确warnings"""
     payload = {"query": "test", "scope": "news"}

@@ -1308,7 +1308,12 @@ class CryptoNewsSearchInput(BaseModel):
 
     query: Optional[str] = Field(default=None, description="搜索关键词（可选）")
     symbol: Optional[str] = Field(default=None, description="币种符号（可选），如 BTC、ETH")
-    limit: int = Field(default=20, description="结果数量")
+    limit: int = Field(default=20, ge=1, le=500, description="结果数量（1-500）")
+    offset: int = Field(
+        default=0,
+        ge=0,
+        description="分页偏移量，用于获取下一批结果。与 limit 配合使用可实现分页获取 200+ 条新闻",
+    )
     sort_by: str = Field(
         default="timestamp",
         description="排序字段：timestamp（最新优先）或 score（相关性优先）",
@@ -1317,9 +1322,9 @@ class CryptoNewsSearchInput(BaseModel):
         default=None,
         description="时间范围过滤: past_24h/day, past_week/7d, past_month/30d, past_year 等",
     )
-    start_time: Optional[str] = Field(
+    start_time: Optional[int] = Field(
         default=None,
-        description="起始时间（ISO格式，优先级高于 time_range），如 2025-01-01T00:00:00Z",
+        description="起始时间（Unix 毫秒时间戳，优先级高于 time_range），如 1735689600000",
     )
 
     @field_validator("symbol")
@@ -1343,6 +1348,14 @@ class CryptoNewsSearchOutput(BaseModel):
     symbol: Optional[str] = None
     results: List[SearchResult]
     total_results: int
+    next_offset: Optional[int] = Field(
+        default=None,
+        description="下一页的偏移量。如果为 null，表示没有更多结果",
+    )
+    has_more: bool = Field(
+        default=False,
+        description="是否还有更多结果可获取",
+    )
     source_meta: List[SourceMeta] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
     as_of_utc: str
@@ -1535,74 +1548,6 @@ class MacroHubOutput(BaseModel):
     data: MacroHubData
     source_meta: List[SourceMeta] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
-    as_of_utc: str
-
-    @field_validator("as_of_utc", mode="before")
-    @classmethod
-    def format_timestamp(cls, v):
-        if isinstance(v, datetime):
-            return v.isoformat() + "Z"
-        return v
-
-
-# ==================== draw_chart 工具模型 ====================
-
-
-class DrawChartInput(BaseModel):
-    """
-    draw_chart 输入参数（由调用方提供完整图表配置）
-
-    本工具的职责是：
-    - 接收上游 Agent / 客户端已经根据 K 线 / 指标等数据生成的 Plotly 图表配置
-    - 做基本的结构校验与数据点统计
-    - 统一输出格式，方便前端直接渲染或下游持久化
-
-    注意：draw_chart 不会再去调用其他 MCP 工具拉取行情数据，
-    也不会主动从 market_microstructure / derivatives_hub 获取 K 线。
-    """
-
-    chart_type: str = Field(
-        ...,
-        description="图表类型: candlestick (K线图), line (折线图), bar (柱状图), "
-        "area (面积图), scatter (散点图) 等",
-    )
-    symbol: str = Field(
-        ...,
-        description="资产或交易对符号，如 BTC/USDT、ETH 等",
-    )
-    title: Optional[str] = Field(
-        default=None,
-        description="图表标题（可选，用于前端展示）",
-    )
-    timeframe: Optional[str] = Field(
-        default=None,
-        description="时间框架: 1m, 5m, 15m, 1h, 4h, 1d, 1w, 1y 等（可选，仅用于说明）",
-    )
-    indicators: List[str] = Field(
-        default_factory=list,
-        description="图表中包含的技术指标标识列表，如 MA20, MA50, MA200, RSI 等（仅用于记录）",
-    )
-    config: Dict[str, Any] = Field(
-        ...,
-        description="完整的 Plotly 图表配置（包含 data 与 layout），"
-        "由调用方根据 K 线或其他数据生成",
-    )
-
-
-class ChartOutput(BaseModel):
-    """图表输出（返回配置，非图片）"""
-
-    chart_config: Dict[str, Any]  # Plotly/ECharts配置
-    data_points: int
-    warnings: List[str] = Field(default_factory=list)
-
-
-class DrawChartOutput(BaseModel):
-    """draw_chart输出"""
-
-    symbol: str
-    chart_type: str
-    chart: ChartOutput
     as_of_utc: str
 
     @field_validator("as_of_utc", mode="before")
@@ -1809,6 +1754,16 @@ class HyperliquidMarketInput(BaseModel):
     """hyperliquid_market 输入参数"""
 
     symbol: str = Field(..., description="标的符号，如 BTC")
+    start_time: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="资金费率起始时间（Unix 毫秒时间戳，仅 funding 生效）",
+    )
+    end_time: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="资金费率结束时间（Unix 毫秒时间戳，仅 funding 生效）",
+    )
     include_fields: List[HyperliquidMarketIncludeField] = Field(
         default=[HyperliquidMarketIncludeField.ALL],
         description="返回字段：funding, open_interest, orderbook, trades, asset_contexts, all",

@@ -35,7 +35,11 @@ class OKXClient(BaseDataSource):
         }
 
     async def fetch_raw(
-        self, endpoint: str, params: Optional[Dict] = None
+        self,
+        endpoint: str,
+        params: Optional[Dict] = None,
+        base_url_override: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
     ) -> Any:
         """
         获取原始数据
@@ -43,11 +47,19 @@ class OKXClient(BaseDataSource):
         Args:
             endpoint: API端点
             params: 查询参数
+            base_url_override: 可选的基础URL覆盖
+            headers: 可选的自定义请求头
 
         Returns:
             原始响应数据
         """
-        return await self._make_request("GET", endpoint, params)
+        return await self._make_request(
+            "GET",
+            endpoint,
+            params=params,
+            base_url_override=base_url_override,
+            headers=headers,
+        )
 
     def transform(self, raw_data: Any, data_type: str) -> Dict[str, Any]:
         """

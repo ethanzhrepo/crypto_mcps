@@ -18,9 +18,6 @@ web_research_search:
 macro_hub:
   enabled: true
 
-draw_chart:
-  enabled: true
-
 etf_flows_holdings:
   enabled: true
 

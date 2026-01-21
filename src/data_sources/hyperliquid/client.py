@@ -3,7 +3,6 @@ Hyperliquid public API client.
 
 Docs: https://hyperliquid.gitbook.io/hyperliquid-docs/api
 """
-from datetime import datetime
 from typing import Any, Dict, Optional
 
 from src.core.models import SourceMeta
@@ -96,7 +95,34 @@ class HyperliquidClient(BaseDataSource):
         coin: str,
         ttl_seconds: int = 10,
     ) -> tuple[Any, SourceMeta]:
-        return await self.get_info({"type": "openInterest", "coin": coin}, ttl_seconds)
+        """
+        Fetch open interest via metaAndAssetCtxs and extract the asset context for coin.
+
+        Hyperliquid doesn't expose a standalone openInterest type in /info.
+        """
+        data, meta = await self.get_asset_contexts(ttl_seconds)
+        if not isinstance(data, list) or len(data) < 2:
+            return {"coin": coin, "open_interest": None, "context": None}, meta
+
+        meta_block = data[0] if isinstance(data[0], dict) else {}
+        ctxs = data[1] if isinstance(data[1], list) else []
+        universe = meta_block.get("universe", []) if isinstance(meta_block, dict) else []
+
+        idx = None
+        for i, item in enumerate(universe):
+            if isinstance(item, dict) and item.get("name") == coin:
+                idx = i
+                break
+
+        if idx is None or idx >= len(ctxs):
+            return {"coin": coin, "open_interest": None, "context": None}, meta
+
+        ctx = ctxs[idx] if isinstance(ctxs[idx], dict) else {}
+        return {
+            "coin": coin,
+            "open_interest": ctx.get("openInterest"),
+            "context": ctx,
+        }, meta
 
     async def get_meta(
         self,

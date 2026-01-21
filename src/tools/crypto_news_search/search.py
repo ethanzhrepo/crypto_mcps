@@ -4,7 +4,7 @@ crypto_news_search 工具实现
 提供加密新闻搜索功能。
 """
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 
 import structlog
@@ -41,9 +41,9 @@ class CryptoNewsSearchTool:
             warnings.append("未提供 query 或 symbol，将返回最新消息（受 limit 限制）")
 
         start_window = self._parse_time_range(params.time_range)
-        start_iso = params.start_time
-        if not start_iso and start_window:
-            start_iso = start_window.replace(microsecond=0).isoformat() + "Z"
+        start_time = params.start_time
+        if start_time is None and start_window:
+            start_time = int(start_window.replace(microsecond=0).timestamp() * 1000)
 
         results: List[SearchResult] = []
         source_meta: List[SourceMeta] = []
@@ -55,11 +55,17 @@ class CryptoNewsSearchTool:
                 keyword=params.query,
                 symbol=params.symbol,
                 limit=params.limit,
+                offset=params.offset,
                 sort_by=params.sort_by,
-                start_time=start_iso,
+                start_time=start_time,
             )
             results = [SearchResult(**item) for item in data]
             source_meta = [meta]
+
+        # Calculate pagination info
+        returned_count = len(results)
+        next_offset = params.offset + returned_count if returned_count == params.limit else None
+        has_more = next_offset is not None
 
         elapsed = time.time() - start
         logger.info(
@@ -67,6 +73,8 @@ class CryptoNewsSearchTool:
             query=params.query,
             symbol=params.symbol,
             results_count=len(results),
+            offset=params.offset,
+            has_more=has_more,
             elapsed_ms=round(elapsed * 1000, 2),
         )
 
@@ -75,6 +83,8 @@ class CryptoNewsSearchTool:
             symbol=params.symbol,
             results=results,
             total_results=len(results),
+            next_offset=next_offset,
+            has_more=has_more,
             source_meta=source_meta,
             warnings=warnings,
             as_of_utc=datetime.utcnow(),
@@ -88,7 +98,7 @@ class CryptoNewsSearchTool:
         if tr.startswith("past_"):
             tr = tr[len("past_") :]
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         if tr.endswith("h") and tr[:-1].isdigit():
             return now - timedelta(hours=int(tr[:-1]))

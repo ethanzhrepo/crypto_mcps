@@ -32,8 +32,6 @@ from src.core.models import (
     HyperliquidMarketOutput,
     DerivativesHubInput,
     DerivativesHubOutput,
-    DrawChartInput,
-    DrawChartOutput,
     GrokSocialTraceInput,
     GrokSocialTraceOutput,
     MacroHubInput,
@@ -84,8 +82,8 @@ from src.data_sources.telegram_scraper import TelegramScraperClient
 from src.data_sources.thegraph import TheGraphClient
 from src.data_sources.yfinance import YahooFinanceClient
 from src.data_sources.investing_calendar import InvestingCalendarClient
+from src.data_sources.cme.fedwatch import CMEFedWatchClient
 from src.middleware.cache import cache_manager
-from src.tools.chart import DrawChartTool
 from src.tools.blockspace_mev import BlockspaceMevTool
 from src.tools.cex_netflow_reserves import CexNetflowReservesTool
 from src.tools.crypto.overview import crypto_overview_tool
@@ -126,7 +124,6 @@ tools = {
     "crypto_news_search": None,
     "web_research_search": None,
     "macro_hub": None,
-    "draw_chart": None,
     "grok_social_trace": None,
     "etf_flows_holdings": None,
     "cex_netflow_reserves": None,
@@ -242,7 +239,9 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "output_model": CryptoNewsSearchOutput,
         "capabilities": ["telegram", "news", "social", "narrative"],
         "examples": [
-            {"description": "Search token mentions", "arguments": {"symbol": "BTC", "limit": 20, "time_range": "24h"}}
+            {"description": "Search token mentions", "arguments": {"symbol": "BTC", "limit": 20, "time_range": "24h"}},
+            {"description": "Paginated search (page 1)", "arguments": {"symbol": "BTC", "limit": 100, "offset": 0}},
+            {"description": "Paginated search (page 2)", "arguments": {"symbol": "BTC", "limit": 100, "offset": 100}},
         ],
         "limitations": ["Requires TELEGRAM_SCRAPER_URL configured."],
         "cost_hints": {"latency_class": "fast"},
@@ -271,27 +270,6 @@ TOOL_SPECS: List[Dict[str, Any]] = [
             {"description": "Fetch Fear & Greed", "arguments": {"mode": "fear_greed"}}
         ],
         "limitations": ["FRED fields require FRED_API_KEY when enabled."],
-        "cost_hints": {"latency_class": "fast"},
-    },
-    {
-        "name": "draw_chart",
-        "description": "Chart visualization with Plotly based on client-provided configs: candlestick, line, area, bar, scatter. Does not fetch market data itself; callers must supply ready-to-render chart config.",
-        "endpoint": "/tools/draw_chart",
-        "input_model": DrawChartInput,
-        "output_model": DrawChartOutput,
-        "capabilities": ["chart", "visualization"],
-        "examples": [
-            {
-                "description": "Render a line chart from provided Plotly config",
-                "arguments": {
-                    "chart_type": "line",
-                    "symbol": "BTC/USDT",
-                    "title": "BTC Price",
-                    "config": {"data": [], "layout": {}},
-                },
-            }
-        ],
-        "limitations": ["Does not fetch data; input config must contain series."],
         "cost_hints": {"latency_class": "fast"},
     },
     {
@@ -367,7 +345,21 @@ TOOL_SPECS: List[Dict[str, Any]] = [
         "input_model": HyperliquidMarketInput,
         "output_model": HyperliquidMarketOutput,
         "capabilities": ["derivatives", "perps", "hyperliquid"],
-        "examples": [{"description": "BTC funding + OI", "arguments": {"symbol": "BTC"}}],
+        "examples": [
+            {
+                "description": "BTC funding + OI (default time range)",
+                "arguments": {"symbol": "BTC", "include_fields": ["funding", "open_interest"]},
+            },
+            {
+                "description": "BTC funding with explicit time range",
+                "arguments": {
+                    "symbol": "BTC",
+                    "include_fields": ["funding"],
+                    "start_time": 1735689600000,
+                    "end_time": 1736294400000,
+                },
+            },
+        ],
         "limitations": [],
         "cost_hints": {"latency_class": "fast"},
     },
@@ -576,10 +568,6 @@ def _build_registry_entry(spec: Dict[str, Any]) -> Dict[str, Any]:
         as_of_semantics = (
             "Response includes as_of_utc only; source_meta and warnings are not returned."
         )
-    elif spec["name"] == "draw_chart":
-        as_of_semantics = (
-            "Response includes as_of_utc; warnings are under chart.warnings; source_meta is not returned."
-        )
     freshness = {
         "typical_ttl_seconds": typical_ttl,
         "as_of_semantics": as_of_semantics,
@@ -644,7 +632,7 @@ async def initialize_data_sources():
         )
         registry.register("telegram_scraper", telegram_scraper_client)
         logger.info(
-            "telegram_scraper_client_initialized",
+            "crypto_news_search_client_initialized",
             url=config.settings.telegram_scraper_url,
         )
     except Exception as e:
@@ -724,6 +712,16 @@ async def initialize_data_sources():
     deribit = DeribitClient()
     registry.register("deribit", deribit)
 
+    # Coinglass (衍生品清算数据)
+    coinglass_key = config.get_api_key("coinglass")
+    if coinglass_key:
+        from src.data_sources.coinglass import CoinglassClient
+        coinglass = CoinglassClient(api_key=coinglass_key)
+        registry.register("coinglass", coinglass)
+        logger.info("Coinglass client initialized successfully")
+    else:
+        logger.warning("Coinglass API key not configured, liquidation data will be limited")
+
     # CoinMarketCap
     cmc_key = config.get_api_key("coinmarketcap")
     if cmc_key:
@@ -767,20 +765,25 @@ async def initialize_tools():
         okx_client=okx,
         coingecko_client=coingecko,
     )
+    coinglass = registry.get_source("coinglass")
     tools["derivatives_hub"] = DerivativesHubTool(
         binance_client=binance,
         okx_client=okx,
         deribit_client=deribit,
+        coinglass_client=coinglass,
+        defillama_client=defillama,
     )
     tools["crypto_news_search"] = CryptoNewsSearchTool(telegram_scraper_client=telegram_scraper)
     tools["web_research_search"] = WebResearchTool(search_client=search)
+    # FedWatch client (CME利率预期)
+    fedwatch_client = CMEFedWatchClient()
     tools["macro_hub"] = MacroHubTool(
         macro_client=macro,
         fred_client=fred,
         yfinance_client=yfinance,
         calendar_client=calendar,  # 从registry获取calendar客户端（带Redis缓存）
+        fedwatch_client=fedwatch_client,
     )
-    tools["draw_chart"] = DrawChartTool(market_tool=tools["market_microstructure"])
     tools["crypto_overview"] = crypto_overview_tool
 
     # Grok 社交媒体溯源工具
@@ -1045,24 +1048,6 @@ async def macro_hub(params: MacroHubInput):
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         logger.error(f"macro_hub error", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/tools/draw_chart")
-async def draw_chart(params: DrawChartInput):
-    """Draw Chart 工具"""
-    try:
-        tool = tools["draw_chart"]
-        if tool is None:
-            raise HTTPException(status_code=503, detail="Tool not initialized")
-
-        result = await tool.execute(params)
-        return result.model_dump() if hasattr(result, 'model_dump') else result
-
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        logger.error(f"draw_chart error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 

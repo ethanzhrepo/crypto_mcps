@@ -2,7 +2,7 @@
 hyperliquid_market tool implementation.
 """
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import structlog
@@ -17,6 +17,8 @@ from src.core.models import (
 from src.data_sources.hyperliquid import HyperliquidClient
 
 logger = structlog.get_logger()
+
+DEFAULT_FUNDING_LOOKBACK = timedelta(days=7)
 
 
 class HyperliquidMarketTool:
@@ -42,9 +44,32 @@ class HyperliquidMarketTool:
 
         if include_all or HyperliquidMarketIncludeField.FUNDING.value in include_fields:
             try:
-                funding, meta = await self.hyperliquid.get_funding_history(symbol)
-                data.funding = funding
-                source_metas.append(meta)
+                funding_start = params.start_time
+                funding_end = params.end_time
+                if funding_start is None:
+                    anchor_ms = (
+                        funding_end
+                        if funding_end is not None
+                        else int(datetime.now(timezone.utc).timestamp() * 1000)
+                    )
+                    funding_start = int(
+                        anchor_ms - (DEFAULT_FUNDING_LOOKBACK.total_seconds() * 1000)
+                    )
+
+                if (
+                    funding_end is not None
+                    and funding_start is not None
+                    and funding_end < funding_start
+                ):
+                    warnings.append("Hyperliquid funding skipped: end_time < start_time.")
+                else:
+                    funding, meta = await self.hyperliquid.get_funding_history(
+                        symbol,
+                        start_time=funding_start,
+                        end_time=funding_end,
+                    )
+                    data.funding = funding
+                    source_metas.append(meta)
             except Exception as exc:
                 logger.warning("hyperliquid_funding_failed", error=str(exc))
                 warnings.append(f"Hyperliquid funding fetch failed: {exc}")

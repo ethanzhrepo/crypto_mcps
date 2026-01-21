@@ -1,7 +1,7 @@
 """
 crypto_news_search 工具单元测试
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -78,12 +78,14 @@ class TestCryptoNewsSearchTool:
     @pytest.mark.asyncio
     async def test_time_range_is_converted_to_start_time(self, mock_telegram_scraper_client):
         tool = CryptoNewsSearchTool(telegram_scraper_client=mock_telegram_scraper_client)
-        tool._parse_time_range = MagicMock(return_value=datetime(2025, 1, 2, 3, 4, 5))
+        tool._parse_time_range = MagicMock(
+            return_value=datetime(2025, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+        )
 
         await tool.execute({"query": "btc", "time_range": "24h", "limit": 1})
 
         _, kwargs = mock_telegram_scraper_client.search_messages.call_args
-        assert kwargs["start_time"] == "2025-01-02T03:04:05Z"
+        assert kwargs["start_time"] == 1735787045000
 
     @pytest.mark.asyncio
     async def test_no_query_or_symbol_searches_latest(self, mock_telegram_scraper_client):
@@ -97,6 +99,60 @@ class TestCryptoNewsSearchTool:
         assert kwargs["symbol"] is None
 
 
+    @pytest.mark.asyncio
+    async def test_offset_passed_to_client(self, mock_telegram_scraper_client):
+        """Test that offset parameter is correctly passed to the telegram client"""
+        tool = CryptoNewsSearchTool(telegram_scraper_client=mock_telegram_scraper_client)
+
+        await tool.execute({"query": "btc", "limit": 100, "offset": 50})
+
+        _, kwargs = mock_telegram_scraper_client.search_messages.call_args
+        assert kwargs["offset"] == 50
+
+    @pytest.mark.asyncio
+    async def test_default_offset_is_zero(self, mock_telegram_scraper_client):
+        """Test that default offset is 0 when not specified"""
+        tool = CryptoNewsSearchTool(telegram_scraper_client=mock_telegram_scraper_client)
+
+        await tool.execute({"query": "btc", "limit": 10})
+
+        _, kwargs = mock_telegram_scraper_client.search_messages.call_args
+        assert kwargs["offset"] == 0
+
+    @pytest.mark.asyncio
+    async def test_has_more_true_when_results_equal_limit(self, mock_telegram_scraper_client):
+        """Test that has_more is true when results count equals limit"""
+        # Mock returns 2 results
+        tool = CryptoNewsSearchTool(telegram_scraper_client=mock_telegram_scraper_client)
+
+        result = await tool.execute({"query": "btc", "limit": 2, "offset": 0})
+
+        assert result.has_more is True
+        assert result.next_offset == 2
+
+    @pytest.mark.asyncio
+    async def test_has_more_false_when_results_less_than_limit(self, mock_telegram_scraper_client):
+        """Test that has_more is false when results count is less than limit"""
+        tool = CryptoNewsSearchTool(telegram_scraper_client=mock_telegram_scraper_client)
+
+        # Ask for 10 but only 2 available (mocked)
+        result = await tool.execute({"query": "btc", "limit": 10, "offset": 0})
+
+        assert result.has_more is False
+        assert result.next_offset is None
+
+    @pytest.mark.asyncio
+    async def test_next_offset_calculation_with_offset(self, mock_telegram_scraper_client):
+        """Test that next_offset is calculated correctly when starting from an offset"""
+        tool = CryptoNewsSearchTool(telegram_scraper_client=mock_telegram_scraper_client)
+
+        # Start from offset 50, get 2 results (matching limit)
+        result = await tool.execute({"query": "btc", "limit": 2, "offset": 50})
+
+        assert result.has_more is True
+        assert result.next_offset == 52  # 50 + 2
+
+
 @pytest.mark.unit
 class TestCryptoNewsSearchInput:
     def test_symbol_is_uppercased(self):
@@ -106,3 +162,17 @@ class TestCryptoNewsSearchInput:
         with pytest.raises(ValueError, match="sort_by must be 'timestamp' or 'score'"):
             CryptoNewsSearchInput(sort_by="invalid")
 
+    def test_offset_validation(self):
+        """Test that offset must be non-negative"""
+        with pytest.raises(ValueError):
+            CryptoNewsSearchInput(offset=-1)
+
+    def test_offset_default_is_zero(self):
+        """Test that offset defaults to 0"""
+        input_model = CryptoNewsSearchInput()
+        assert input_model.offset == 0
+
+    def test_limit_max_is_500(self):
+        """Test that limit max is 500"""
+        with pytest.raises(ValueError):
+            CryptoNewsSearchInput(limit=501)

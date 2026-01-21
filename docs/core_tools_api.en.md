@@ -324,19 +324,39 @@ POST /tools/crypto_news_search
 |-----------|------|----------|---------|-------------|
 | query | string | ✗ | null | Search keyword (optional) |
 | symbol | string | ✗ | null | Token symbol (optional), e.g., BTC, ETH |
-| limit | integer | ✗ | 20 | Number of results |
+| limit | integer | ✗ | 20 | Number of results (1-500) |
+| offset | integer | ✗ | 0 | Pagination offset for fetching more results |
 | sort_by | string | ✗ | timestamp | Sort field: timestamp (newest first) or score (relevance first) |
 | time_range | string | ✗ | null | Time range filter: past_24h/day, past_week/7d, past_month/30d, past_year, etc. |
-| start_time | string | ✗ | null | Start time (ISO format, takes precedence over time_range), e.g., 2025-01-01T00:00:00Z |
+| start_time | integer | ✗ | null | Start time (Unix epoch milliseconds, takes precedence over time_range), e.g., 1735689600000 |
 
 **Request Example**
 ```bash
+# Basic request
 curl -X POST http://localhost:8001/tools/crypto_news_search \
   -H "Content-Type: application/json" \
   -d '{
     "symbol": "BTC",
     "limit": 20,
     "time_range": "24h"
+  }'
+
+# Paginated request - page 1
+curl -X POST http://localhost:8001/tools/crypto_news_search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "btc",
+    "limit": 100,
+    "offset": 0
+  }'
+
+# Paginated request - page 2 (using next_offset from previous response)
+curl -X POST http://localhost:8001/tools/crypto_news_search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "btc",
+    "limit": 100,
+    "offset": 100
   }'
 ```
 
@@ -355,7 +375,9 @@ curl -X POST http://localhost:8001/tools/crypto_news_search \
       "published_at": "2025-01-10T10:30:00Z"
     }
   ],
-  "total_results": 156,
+  "total_results": 100,
+  "next_offset": 100,
+  "has_more": true,
   "source_meta": [
     {
       "provider": "telegram_scraper",
@@ -379,7 +401,9 @@ curl -X POST http://localhost:8001/tools/crypto_news_search \
   - `snippet`: Result snippet
   - `relevance_score`: Relevance score
   - `published_at`: Publication time
-- `total_results`: Total number of results
+- `total_results`: Number of results returned in this response
+- `next_offset`: Offset for next page (null if no more results)
+- `has_more`: Whether more results are available
 - `source_meta`: Data source metadata
 - `warnings`: Warning messages list
 
@@ -391,6 +415,8 @@ curl -X POST http://localhost:8001/tools/crypto_news_search \
 **Notes**
 - Requires TELEGRAM_SCRAPER_URL configured
 - Latency class: fast
+- Supports pagination to fetch 200+ results: set `limit=100`, then use the returned `next_offset` to get the next page
+- Maximum limit per request is 500
 
 ---
 

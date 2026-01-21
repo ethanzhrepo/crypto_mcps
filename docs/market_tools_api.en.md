@@ -893,6 +893,8 @@ POST /tools/hyperliquid_market
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | symbol | string | ✓ | - | Underlying symbol, e.g., BTC |
+| start_time | integer | ✗ | null | Funding history start time (Unix epoch ms; funding only). Defaults to now - 7d if funding requested. |
+| end_time | integer | ✗ | null | Funding history end time (Unix epoch ms; funding only). Defaults to current time. |
 | include_fields | array[string] | ✗ | ["all"] | Return fields: funding, open_interest, orderbook, trades, asset_contexts, all |
 
 **Request Example**
@@ -900,7 +902,9 @@ POST /tools/hyperliquid_market
 curl -X POST http://localhost:8001/tools/hyperliquid_market \
   -H "Content-Type: application/json" \
   -d '{
-    "symbol": "BTC"
+    "symbol": "BTC",
+    "include_fields": ["funding", "open_interest"],
+    "start_time": 1735689600000
   }'
 ```
 
@@ -942,6 +946,8 @@ curl -X POST http://localhost:8001/tools/hyperliquid_market \
 - No special API keys required
 - Latency class: fast
 - Focused on Hyperliquid DEX data
+- Funding history requires `start_time`; the tool supplies a default if omitted.
+- Open interest is derived from `metaAndAssetCtxs` and returned as a per-asset context.
 
 ---
 

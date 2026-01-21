@@ -39,7 +39,7 @@ class TelegramScraperClient(BaseDataSource):
         )
         self.verify_ssl = verify_ssl
         logger.info(
-            "telegram_scraper_client_initialized",
+            "crypto_news_search_client_initialized",
             base_url=base_url,
             verify_ssl=verify_ssl,
         )
@@ -81,23 +81,14 @@ class TelegramScraperClient(BaseDataSource):
             headers=headers,
         )
 
-    @staticmethod
-    def _normalize_iso(dt: Optional[str]) -> Optional[str]:
-        if not dt:
-            return None
-        normalized = dt.strip()
-        if normalized.endswith("Z"):
-            # tel2es uses datetime.fromisoformat, which doesn't accept trailing "Z"
-            return normalized[:-1] + "+00:00"
-        return normalized
-
     async def search_messages(
         self,
         keyword: Optional[str] = None,
         symbol: Optional[str] = None,
         limit: int = 50,
+        offset: int = 0,
         sort_by: str = "timestamp",
-        start_time: Optional[str] = None,
+        start_time: Optional[int] = None,
     ) -> tuple[list[dict], SourceMeta]:
         """
         搜索Telegram数据
@@ -105,15 +96,15 @@ class TelegramScraperClient(BaseDataSource):
         Args:
             keyword: 搜索关键词
             symbol: 币种符号（如 BTC, ETH）
-            limit: 返回结果数量限制（默认50）
+            limit: 返回结果数量限制（默认50，最大500）
+            offset: 分页偏移量（默认0）
             sort_by: 排序字段（timestamp/score）
+            start_time: 起始时间过滤（Unix 毫秒时间戳）
 
         Returns:
             (消息列表, 元信息)
         """
         query_term = keyword or symbol
-        start_time = self._normalize_iso(start_time)
-
         # tel2es:
         # - /search: requires keywords, sorts by score
         # - /latest: returns newest messages
@@ -122,16 +113,16 @@ class TelegramScraperClient(BaseDataSource):
             params = {
                 "keywords": query_term,
                 "start_time": start_time,
-                "limit": min(limit, 100),
-                "offset": 0,
+                "limit": min(limit, 500),
+                "offset": offset,
             }
             data_type = "search"
         else:
             endpoint = "/latest"
             params = {
                 "start_time": start_time,
-                "limit": min(limit, 100),
-                "offset": 0,
+                "limit": min(limit, 500),
+                "offset": offset,
             }
             data_type = "latest"
 

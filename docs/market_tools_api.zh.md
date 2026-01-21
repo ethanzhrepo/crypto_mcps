@@ -893,6 +893,8 @@ POST /tools/hyperliquid_market
 | 参数 / Parameter | 类型 / Type | 必选 / Required | 默认值 / Default | 说明 / Description |
 |-----------------|------------|----------------|-----------------|-------------------|
 | symbol | string | ✓ | - | 标的符号，如 BTC |
+| start_time | integer | ✗ | null | 资金费率起始时间（Unix 毫秒时间戳，仅 funding 生效）。若请求 funding 且未提供，默认 now - 7d。 |
+| end_time | integer | ✗ | null | 资金费率结束时间（Unix 毫秒时间戳，仅 funding 生效）。默认当前时间。 |
 | include_fields | array[string] | ✗ | ["all"] | 返回字段：funding, open_interest, orderbook, trades, asset_contexts, all |
 
 **请求示例 / Request Example**
@@ -900,7 +902,9 @@ POST /tools/hyperliquid_market
 curl -X POST http://localhost:8001/tools/hyperliquid_market \
   -H "Content-Type: application/json" \
   -d '{
-    "symbol": "BTC"
+    "symbol": "BTC",
+    "include_fields": ["funding", "open_interest"],
+    "start_time": 1735689600000
   }'
 ```
 
@@ -942,6 +946,8 @@ curl -X POST http://localhost:8001/tools/hyperliquid_market \
 - 无特殊 API 密钥要求
 - 延迟等级：快速 (fast)
 - 专注于 Hyperliquid DEX 数据
+- 资金费率需要 `start_time`；未提供时工具会自动补默认值。
+- open_interest 从 `metaAndAssetCtxs` 解析并返回对应资产的上下文数据。
 
 ---
 
